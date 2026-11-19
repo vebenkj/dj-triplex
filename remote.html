@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>DJ Triplex – fjernkontroll</title>
+<style>
+:root{--bg:#120b0d;--panel:#1e1316;--line:#3a2529;--ink:#f6ece6;--dim:#b49c95;--red:#d6334a;--gold:#e8b44a;--green:#3fae6e}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,Segoe UI,sans-serif;padding:14px;max-width:520px;margin:0 auto}
+header{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+header h1{font-size:20px;margin:0;flex:1}
+.pill{padding:3px 9px;border-radius:6px;background:#333;font-weight:700;font-size:12px}
+.pill.live{background:var(--red)}
+.p{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+.p h2{margin:0 0 8px;font-size:14px;color:var(--gold)}
+.now{font-size:22px;font-weight:700;line-height:1.2}
+.artist{color:var(--dim)}
+.next{margin-top:8px;color:var(--dim);font-size:14px}
+.row{display:flex;gap:8px;margin-top:10px}
+.row>*{flex:1}
+button{background:#2b1b1f;color:var(--ink);border:1px solid var(--line);border-radius:12px;padding:12px;font:600 16px system-ui,sans-serif;min-height:52px;cursor:pointer}
+button:active{transform:scale(.97)}
+button.go{background:var(--green);border-color:var(--green);color:#06140c}
+button.on{background:var(--gold);border-color:var(--gold);color:#000}
+input{width:100%;background:#0d0809;color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:12px;font:16px system-ui,sans-serif}
+.small{font-size:13px;color:var(--dim)}
+ul{margin:0;padding-left:18px}
+li{margin:3px 0}
+.tag{font-size:11px;padding:1px 6px;border-radius:5px;background:#444;margin-left:6px}
+#toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#000c;padding:10px 16px;border-radius:10px;display:none}
+</style>
+</head>
+<body>
+<header><h1>🎄 DJ Triplex</h1><span class="pill" id="air">OFFLINE</span></header>
+
+<section class="p">
+  <h2>Spiller nå</h2>
+  <div class="now" id="np">–</div>
+  <div class="artist" id="na"></div>
+  <div class="next" id="nx">Neste: –</div>
+  <div class="small" id="src"></div>
+  <div class="row">
+    <button class="go" id="bStart">▶ Start</button>
+    <button id="bPause">⏸ Pause DJ</button>
+    <button id="bSkip">⏭ Hopp over</button>
+  </div>
+  <div class="row"><button id="bMusic">⏯ Pause musikken</button></div>
+  <div class="row">
+    <button id="mRolig">🍽 Middag</button>
+    <button id="mFest">🕺 Fest</button>
+  </div>
+</section>
+
+<section class="p">
+  <h2>La DJ-en si noe</h2>
+  <input id="say" maxlength="300" placeholder="Desserten er servert! Kom og forsyn dere.">
+  <div class="row"><button id="bSay">🎙 Send til DJ-en</button></div>
+</section>
+
+<section class="p">
+  <h2>Ønsker</h2>
+  <ul id="reqs"><li class="small">Ingen ønsker ennå.</li></ul>
+</section>
+
+<section class="p">
+  <h2>Nylig spilt</h2>
+  <ul id="hist"><li class="small">–</li></ul>
+</section>
+
+<section class="p">
+  <h2>Spillelista (<span id="lm">–</span>)</h2>
+  <ul id="list"><li class="small">Venter på DJ-konsollen …</li></ul>
+</section>
+
+<p class="small" id="seen">Ikke kontakt med DJ-konsollen ennå.</p>
+<div id="toast"></div>
+
+<script>
+{
+const $ = id => document.getElementById(id);
+const ctl = new URLSearchParams(location.hash.slice(1)).get('c');
+const toast = t => { const el = $('toast'); el.textContent = t; el.style.display = 'block'; clearTimeout(el._t); el._t = setTimeout(() => el.style.display = 'none', 2200); };
+let st = null, lastSeen = 0;
+
+if (!ctl) { document.body.innerHTML = '<p style="padding:20px">Denne lenken mangler fjernkontroll-koden. Skann QR-koden under «Mer» i DJ-konsollen på nytt.</p>'; }
+else {
+  async function send(cmd, quiet) {
+    try {
+      const r = await fetch('https://ntfy.sh/' + encodeURIComponent(ctl), { method: 'POST', body: JSON.stringify(cmd) });
+      if (!r.ok) throw new Error(r.status);
+      if (!quiet) toast('Sendt ✓');
+    } catch (e) { toast('Fikk ikke sendt (' + e.message + ')'); }
+  }
+  $('bStart').onclick = () => send({ cmd: 'start' });
+  $('bPause').onclick = () => send({ cmd: st && st.paused ? 'resume' : 'pause' });
+  $('bSkip').onclick = () => send({ cmd: 'skip' });
+  $('bMusic').onclick = () => send({ cmd: 'music', play: st ? st.music === false : undefined });
+  $('mRolig').onclick = () => send({ cmd: 'mode', m: 'rolig' });
+  $('mFest').onclick = () => send({ cmd: 'mode', m: 'fest' });
+  $('bSay').onclick = () => { const t = $('say').value.trim(); if (!t) return; send({ cmd: 'say', text: t }); $('say').value = ''; };
+  $('say').addEventListener('keydown', e => { if (e.key === 'Enter') $('bSay').click(); });
+
+  function li(text, tag) { const el = document.createElement('li'); el.textContent = text; if (tag) { const s = document.createElement('span'); s.className = 'tag'; s.textContent = tag; el.appendChild(s); } return el; }
+  function fill(id, items, empty) { const ul = $(id); ul.innerHTML = ''; if (!items.length) { const e = li(empty); e.className = 'small'; ul.appendChild(e); } else items.forEach(x => ul.appendChild(x)); }
+  function render() {
+    if (!st) return;
+    $('np').textContent = st.np || '–'; $('na').textContent = st.na || '';
+    $('nx').textContent = 'Neste: ' + (st.nx || '–');
+    $('src').textContent = st.src ? 'Siste replikk: ' + st.src : '';
+    $('air').textContent = !st.running ? 'IKKE STARTET' : st.paused ? 'DJ PAUSE' : st.talking ? 'ON AIR' : 'SPILLER';
+    $('air').className = 'pill' + (st.running && !st.paused ? ' live' : '');
+    $('bPause').textContent = st.paused ? '▶ Fortsett DJ' : '⏸ Pause DJ';
+    $('bMusic').textContent = st.music === false ? '▶ Spill musikken' : '⏯ Pause musikken';
+    $('mRolig').className = st.mode === 'rolig' ? 'on' : ''; $('mFest').className = st.mode === 'fest' ? 'on' : '';
+    fill('reqs', (st.reqs || []).map(r => li(r.s + (r.n ? ' (fra ' + r.n + ')' : ''), r.st)), 'Ingen ønsker ennå.');
+    fill('hist', (st.hist || []).map(h => li(h)), '–');
+    $('lm').textContent = st.mode === 'fest' ? 'fest' : 'middag';
+    const list = (st.list || []).map(q => li(q));
+    if (st.more) { const m = li('… og ' + st.more + ' til'); m.className = 'small'; list.push(m); }
+    fill('list', list, 'Tom spilleliste.');
+  }
+  setInterval(() => {
+    if (!lastSeen) return;
+    const s = Math.round((Date.now() - lastSeen) / 1000);
+    $('seen').textContent = s < 70 ? 'Koblet til DJ-konsollen ✓' : 'Ingen kontakt med DJ-konsollen på ' + Math.round(s / 60) + ' min. Er laptopen på?';
+  }, 5000);
+
+  let es;
+  function listen() {
+    if (es) es.close();
+    es = new EventSource('https://ntfy.sh/' + encodeURIComponent(ctl + '-s') + '/sse?since=2m');
+    es.onmessage = e => {
+      try {
+        const m = JSON.parse(e.data); if (m.event !== 'message') return;
+        const d = JSON.parse(m.message); if (st && d.t < st.t) return;
+        st = d; lastSeen = Date.now(); render(); $('seen').textContent = 'Koblet til DJ-konsollen ✓';
+      } catch {}
+    };
+  }
+  listen();
+  send({ cmd: 'ping' }, true);
+}
+}
+</script>
+</body>
+</html>

@@ -36,7 +36,10 @@ button.red{background:var(--red);border-color:var(--red)}
 .tag{font-size:11px;padding:2px 7px;border-radius:5px;background:#333;white-space:nowrap}
 .tag.venter{background:var(--gold);color:#000}.tag.klar{background:var(--green);color:#000}.tag.avvist{background:#555}
 #log{height:180px;overflow:auto;font:12.5px ui-monospace,Consolas,monospace;color:var(--dim);white-space:pre-wrap}
-#qr{background:#fff;padding:10px;border-radius:10px;display:inline-block}
+#qr,#rqr{background:#fff;padding:10px;border-radius:10px;display:inline-block}
+summary.h2{list-style:none;cursor:pointer;font-weight:700;color:var(--gold);font-size:15px}
+summary.h2::-webkit-details-marker{display:none}
+summary.h2::before{content:'▸ '}details[open]>summary.h2::before{content:'▾ '}
 .seg{display:flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
 .seg button{border:0;border-radius:0;flex:1}
 .seg button.on{background:var(--gold);color:#000}
@@ -61,11 +64,13 @@ details summary{cursor:pointer;color:var(--gold);font-weight:600}
     <div class="artist" id="na"></div>
     <div class="bar"><i id="nb"></i></div>
     <div class="next" id="nx">Neste: –</div>
+    <div class="next" id="src" style="font-size:12px">Siste replikk: –</div>
     <div class="row">
       <button class="go" id="start">▶ Start kvelden</button>
       <button id="pauseDj">⏸ Pause DJ</button>
       <button id="skip">⏭ Hopp over</button>
     </div>
+    <div class="row"><button id="musicBtn">⏯ Pause musikken</button></div>
     <label>Stemning</label>
     <div class="seg" id="mode"><button data-m="rolig">🍽 Middag (rolig)</button><button data-m="fest">🕺 Fest</button></div>
     <label for="say">La DJ-en si noe nå</label>
@@ -80,8 +85,7 @@ details summary{cursor:pointer;color:var(--gold);font-weight:600}
     <div id="reqs"><p style="color:var(--dim)">Ingen ønsker ennå.</p></div>
   </section>
 
-  <section class="p">
-    <h2>Oppsett</h2>
+  <section class="p"><details id="setup"><summary class="h2">Oppsett</summary>
     <label for="cid">Spotify Client ID</label>
     <input id="cid" value="43791d06e25e45a889936c92ecde0a72" placeholder="fra developer.spotify.com">
     <div class="row"><button id="login">Logg inn på Spotify</button><button id="devBtn">Finn enheter</button></div>
@@ -108,8 +112,11 @@ details summary{cursor:pointer;color:var(--gold);font-weight:600}
       <label for="model">Modell</label><input id="model" value="claude-sonnet-5-5">
       <label for="topic">Ønskekanal (ntfy-topic)</label><input id="topic">
       <label for="black">Svarteliste (ett ord per linje)</label><textarea id="black"></textarea>
+      <label>Fjernkontroll for DJ-hjelpere (start, pause, hopp over, stemning, beskjeder)</label>
+      <div id="rqr"></div>
+      <div class="row"><button id="copyRemote">Kopier fjernkontroll-lenke</button><button id="newRemote">Ny kode (stenger ute gamle)</button></div>
     </details>
-  </section>
+  </details></section>
 
   <section class="p">
     <h2>Spillekista</h2>
@@ -197,6 +204,8 @@ let cur = { id: null, queued: false };
 let nextUp = null;          // {uri, name, artist, request}
 let songCount = 0, lastVol = 70, devSupportsVol = true;
 const played = new Set();
+const playHist = [];
+var musicPlaying = null;
 const requests = [];        // {id, song, name, note, status}
 const recentLines = [];
 let timer = null, es = null;
@@ -218,7 +227,8 @@ LS.set('topic', LS.get('topic', null) || 'julebord-' + rand(12));
 // Nøkler kan også gis i adressen: dj.html#key=…&elkey=…&elvoice=… (lagres lokalt, fjernes så fra adresselinja)
 { const h = new URLSearchParams(location.hash.slice(1)); let got = false;
   for (const k of ['key', 'elkey', 'elvoice', 'elmodel', 'model']) if (h.get(k)) { LS.set(k, h.get(k)); got = true; }
-  if (got) history.replaceState(null, '', location.pathname + location.search); }
+  if (got) { location.replace(location.pathname + location.search); throw new Error('laster på nytt med nøkler'); } }
+window.addEventListener('hashchange', () => { if (/(^|[#&])(key|elkey)=/.test(location.hash)) location.reload(); });
 for (const f of fields) { const v = LS.get(f, null); if (v !== null) $(f).value = v; for (const ev of ['input', 'change']) $(f).addEventListener(ev, () => LS.set(f, $(f).value)); }
 if (!$('crate').value.trim()) $('crate').value = DEFAULT_CRATE;
 $('topic').value = LS.get('topic');
@@ -226,7 +236,7 @@ $('topic').addEventListener('change', () => { LS.set('topic', $('topic').value.t
 $('approve').checked = LS.get('approve', false);
 $('approve').addEventListener('change', () => LS.set('approve', $('approve').checked));
 
-function setMode(m) { mode = m; LS.set('mode', m); document.querySelectorAll('#mode button').forEach(b => b.classList.toggle('on', b.dataset.m === m)); }
+function setMode(m) { if (m !== 'rolig' && m !== 'fest') return; mode = m; LS.set('mode', m); document.querySelectorAll('#mode button').forEach(b => b.classList.toggle('on', b.dataset.m === m)); pushStatus(); }
 document.querySelectorAll('#mode button').forEach(b => b.onclick = () => { setMode(b.dataset.m); log('Stemning: ' + b.dataset.m); });
 setMode(mode);
 
@@ -339,6 +349,7 @@ async function sayEL(text) {
 }
 async function say(text) {
   if (useEL() && await sayEL(text)) return;
+  if (useEL()) { lastSrc = lastSrc.replace('ElevenLabs', 'nettleser (ElevenLabs feilet)'); $('src').textContent = 'Siste replikk: ' + lastSrc; }
   return sayBrowser(stripTags(text));
 }
 function sayBrowser(text) {
@@ -353,11 +364,15 @@ function sayBrowser(text) {
   });
 }
 async function setVol(v) { if (!devSupportsVol) return; try { await sp('PUT', '/me/player/volume?volume_percent=' + Math.max(0, Math.min(100, Math.round(v)))); } catch (e) { log('⚠ volum: ' + e.message); } }
-async function onAir(text) {
+let lastSrc = '';
+async function onAir(text, src = 'din beskjed') {
   if (talking) return; talking = true; $('onair').className = 'live'; $('onair').textContent = 'ON AIR';
   const vol = lastVol;
   try {
-    log('🎙 ' + stripTags(text));
+    const voiceSrc = useEL() ? 'ElevenLabs' : 'nettleser';
+    lastSrc = src + ' · ' + voiceSrc;
+    log(`🎙 [${src} → ${voiceSrc}] ` + stripTags(text));
+    $('src').textContent = 'Siste replikk: ' + lastSrc;
     await setVol(vol * (+$('duck').value || 30) / 100);
     await new Promise(r => setTimeout(r, 400));
     await say(text);
@@ -445,9 +460,10 @@ Aldri frekk, seksuell, politisk eller nedlatende. Ingen emojier, anførselstegn,
   finally { clearTimeout(to); }
 }
 async function announce(track, req) {
-  const line = (await claudeLine(track, req)) || templateLine(track, req);
+  const ai = await claudeLine(track, req);
+  const line = ai || templateLine(track, req);
   recentLines.push(line); if (recentLines.length > 6) recentLines.shift();
-  await onAir(line);
+  await onAir(line, ai ? 'Claude' : 'ferdigskrevet');
 }
 
 // ---------- crate & picking ----------
@@ -492,6 +508,7 @@ async function queueNext() {
   const n = await chooseNext(); if (!n) return log('⚠ Fant ingen låt å legge i kø');
   await sp('POST', '/me/player/queue?' + new URLSearchParams({ uri: n.uri, ...($('dev').value ? { device_id: $('dev').value } : {}) }));
   nextUp = n; $('nx').textContent = 'Neste: ' + n.name + ' – ' + n.artist + (n.request ? ' (ønske)' : '');
+  pushStatus();
 }
 
 // ---------- main loop ----------
@@ -506,6 +523,7 @@ async function tick() {
     $('nb').style.width = (100 * st.progress_ms / it.duration_ms) + '%';
     $('bignow').textContent = '♪ ' + it.name + ' – ' + $('na').textContent;
     status(st.is_playing ? 'Spiller' : 'Pause i Spotify');
+    if (musicPlaying !== st.is_playing) { musicPlaying = st.is_playing; $('musicBtn').textContent = musicPlaying ? '⏯ Pause musikken' : '▶ Spill musikken'; pushStatus(); }
     if (it.id !== cur.id) {
       const track = { name: it.name, artist: $('na').textContent };
       const req = nextUp && (nextUp.uri === it.uri || nextUp.name === it.name) ? nextUp.request : null;
@@ -513,6 +531,8 @@ async function tick() {
       const first = cur.id === null;
       cur = { id: it.id, queued: false }; nextUp = null; $('nx').textContent = 'Neste: –';
       songCount++;
+      playHist.unshift(track.name + ' – ' + track.artist); playHist.length = Math.min(playHist.length, 8);
+      pushStatus();
       if (!first && (req || songCount % (+$('every').value) === 0)) announce(track, req);
     }
     if (!cur.queued && st.is_playing && rem < 30000) { cur.queued = true; await queueNext(); }
@@ -534,7 +554,7 @@ async function start() {
     await say(`God kveld, alle sammen, og velkommen til ${$('event').value}! Her er ${$('djname').value}, og musikken starter nå. Skann QR-koden hvis du vil ønske deg en låt!`);
     await sp('PUT', '/me/player/play?device_id=' + encodeURIComponent($('dev').value), { uris: [first.uri] });
     log('▶ Starter med ' + first.name);
-    timer = setInterval(tick, 2500);
+    timer = setInterval(tick, 2500); pushStatus();
   } catch (e) { running = false; log('⚠ ' + e.message); }
 }
 
@@ -548,7 +568,7 @@ function addRequest(d, id) {
   if (!r.song) return;
   if (blacklisted(r.song)) r.status = 'avvist';
   else if (!$('approve').checked) r.status = 'klar';
-  requests.unshift(r); renderReqs();
+  requests.unshift(r); renderReqs(); pushStatus();
   log(`📩 Ønske: ${r.song}${r.name ? ' (fra ' + r.name + ')' : ''}`);
 }
 function listen() {
@@ -586,11 +606,70 @@ function renderReqs() {
   }
 }
 
+// ---------- fjernkontroll via ntfy ----------
+if (!LS.get('ctl', null)) LS.set('ctl', 'djctl-' + rand(20));
+function remoteUrl() { return new URL('remote.html', location.href).href.split('?')[0].split('#')[0] + '#c=' + encodeURIComponent(LS.get('ctl')); }
+function drawRemoteQR() { $('rqr').innerHTML = ''; if (window.QRCode) new QRCode($('rqr'), { text: remoteUrl(), width: 160, height: 160 }); }
+var ctlEs = null, pushT = null, lastPush = 0;
+function statusObj() {
+  const crateList = crate().filter(c => c.tag === mode || c.tag === 'begge').map(c => c.q);
+  const o = { t: Date.now(), running, paused, talking, music: musicPlaying, src: lastSrc, mode, np: $('np').textContent, na: $('na').textContent, nx: $('nx').textContent.replace(/^Neste: /, ''),
+    hist: playHist.slice(0, 6), reqs: requests.slice(0, 6).map(r => ({ s: r.song, n: r.name, st: r.status })), list: [] };
+  for (const q of crateList) { o.list.push(q); if (JSON.stringify(o).length > 3600) { o.list.pop(); o.more = crateList.length - o.list.length; break; } }
+  return o;
+}
+function pushStatus() {
+  clearTimeout(pushT);
+  const wait = Math.max(0, 6000 - (Date.now() - lastPush)); // ntfy.sh tåler ikke spam
+  pushT = setTimeout(async () => {
+    lastPush = Date.now();
+    try { await fetch('https://ntfy.sh/' + encodeURIComponent(LS.get('ctl') + '-s'), { method: 'POST', body: JSON.stringify(statusObj()) }); } catch {}
+  }, Math.max(wait, 400));
+}
+setInterval(pushStatus, 30000);
+async function handleCmd(c) {
+  log('📱 Fjernkontroll: ' + c.cmd + (c.m ? ' ' + c.m : ''));
+  if (c.cmd === 'start') { if (!running) await start(); else setPaused(false); }
+  else if (c.cmd === 'pause') setPaused(true);
+  else if (c.cmd === 'resume') setPaused(false);
+  else if (c.cmd === 'skip') $('skip').onclick();
+  else if (c.cmd === 'music') await setMusic(c.play);
+  else if (c.cmd === 'mode') setMode(c.m);
+  else if (c.cmd === 'say' && c.text) onAir(String(c.text).slice(0, 300));
+  else if (c.cmd === 'ping') pushStatus();
+  pushStatus();
+}
+function listenCtl() {
+  if (ctlEs) ctlEs.close();
+  ctlEs = new EventSource(`https://ntfy.sh/${encodeURIComponent(LS.get('ctl'))}/sse?since=${Math.floor(Date.now() / 1000)}`);
+  const seen = new Set();
+  ctlEs.onmessage = e => {
+    try {
+      const m = JSON.parse(e.data); if (m.event !== 'message' || seen.has(m.id)) return; seen.add(m.id);
+      if (Date.now() / 1000 - m.time > 60) return; // ignorer gamle kommandoer
+      handleCmd(JSON.parse(m.message));
+    } catch {}
+  };
+}
+$('copyRemote').onclick = async () => { try { await navigator.clipboard.writeText(remoteUrl()); log('Fjernkontroll-lenke kopiert'); } catch { log(remoteUrl()); } };
+$('newRemote').onclick = () => { LS.set('ctl', 'djctl-' + rand(20)); drawRemoteQR(); listenCtl(); log('Ny fjernkontroll-kode laget. Gamle lenker virker ikke lenger.'); };
+
 // ---------- buttons ----------
 $('login').onclick = login;
 $('devBtn').onclick = findDevices;
 $('start').onclick = start;
-$('pauseDj').onclick = () => { if (!running) return; paused = !paused; $('pauseDj').textContent = paused ? '▶ Fortsett DJ' : '⏸ Pause DJ'; log(paused ? 'DJ på pause (musikken går)' : 'DJ tilbake'); };
+async function setMusic(play) {
+  const dev = $('dev').value ? '?device_id=' + encodeURIComponent($('dev').value) : '';
+  try {
+    if (play === undefined) { const st = await sp('GET', '/me/player'); play = !(st && st.is_playing); }
+    await sp('PUT', '/me/player/' + (play ? 'play' : 'pause') + dev);
+    musicPlaying = play; $('musicBtn').textContent = play ? '⏯ Pause musikken' : '▶ Spill musikken';
+    log(play ? '▶ Musikken spiller igjen' : '⏸ Musikken satt på pause'); pushStatus();
+  } catch (e) { log('⚠ Musikk: ' + e.message); }
+}
+$('musicBtn').onclick = () => setMusic();
+function setPaused(p) { if (!running) return; paused = p; $('pauseDj').textContent = paused ? '▶ Fortsett DJ' : '⏸ Pause DJ'; log(paused ? 'DJ på pause (musikken går)' : 'DJ tilbake'); pushStatus(); }
+$('pauseDj').onclick = () => setPaused(!paused);
 $('skip').onclick = async () => {
   const btn = $('skip'); if (btn.disabled) return; btn.disabled = true;
   try {
@@ -612,7 +691,7 @@ $('big').onclick = () => { $('big').style.display = 'none'; };
 $('copyUrl').onclick = async () => { try { await navigator.clipboard.writeText(guestUrl()); log('Lenke kopiert: ' + guestUrl()); } catch { log(guestUrl()); } };
 
 handleCallback().then(() => { if (LS.get('tok', null)) findDevices(); });
-drawQR(); listen(); renderReqs();
+drawQR(); listen(); renderReqs(); drawRemoteQR(); listenCtl(); pushStatus();
 log('Klar. Gjesteside: ' + guestUrl());
 }
 </script>
