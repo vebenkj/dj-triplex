@@ -215,7 +215,11 @@ const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 // ---------- persisted settings ----------
 const fields = ['cid', 'key', 'elkey', 'elmodel', 'model', 'djname', 'event', 'about', 'black', 'duck', 'every', 'crate'];
 LS.set('topic', LS.get('topic', null) || 'julebord-' + rand(12));
-for (const f of fields) { const v = LS.get(f, null); if (v !== null) $(f).value = v; $(f).addEventListener('change', () => LS.set(f, $(f).value)); }
+// Nøkler kan også gis i adressen: dj.html#key=…&elkey=…&elvoice=… (lagres lokalt, fjernes så fra adresselinja)
+{ const h = new URLSearchParams(location.hash.slice(1)); let got = false;
+  for (const k of ['key', 'elkey', 'elvoice', 'elmodel', 'model']) if (h.get(k)) { LS.set(k, h.get(k)); got = true; }
+  if (got) history.replaceState(null, '', location.pathname + location.search); }
+for (const f of fields) { const v = LS.get(f, null); if (v !== null) $(f).value = v; for (const ev of ['input', 'change']) $(f).addEventListener(ev, () => LS.set(f, $(f).value)); }
 if (!$('crate').value.trim()) $('crate').value = DEFAULT_CRATE;
 $('topic').value = LS.get('topic');
 $('topic').addEventListener('change', () => { LS.set('topic', $('topic').value.trim()); LS.set('since', null); drawQR(); listen(); });
