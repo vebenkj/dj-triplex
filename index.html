@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DJ Triplex – ønsk deg en låt</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#7a1020;--card:#fff8ef;--ink:#2a1210;--gold:#e8b44a;--green:#1f5a3a}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:radial-gradient(circle at 20% 0%,#a3182c,var(--bg) 60%);font:16px/1.5 Inter,system-ui,sans-serif;color:var(--ink);display:flex;justify-content:center;padding:28px 16px}
+main{width:100%;max-width:440px}
+h1{font-family:Fraunces,Georgia,serif;color:#fff;font-size:38px;line-height:1.05;margin:8px 0 6px}
+.sub{color:#ffd9d9;margin:0 0 22px}
+form{background:var(--card);border-radius:18px;padding:22px;box-shadow:0 18px 40px #0005}
+label{display:block;font-weight:600;margin:14px 0 6px}
+label:first-child{margin-top:0}
+input,textarea{width:100%;font:16px Inter,sans-serif;padding:12px 14px;border:2px solid #e3d6c6;border-radius:12px;background:#fff}
+input:focus,textarea:focus{outline:none;border-color:var(--green)}
+textarea{resize:vertical;min-height:70px}
+.hint{font-size:13px;color:#7a6a5a;margin-top:4px}
+button{margin-top:20px;width:100%;min-height:52px;border:0;border-radius:14px;background:var(--green);color:#fff;font:600 18px Inter,sans-serif;cursor:pointer}
+button:disabled{opacity:.6}
+.msg{margin-top:16px;padding:14px;border-radius:12px;display:none}
+.ok{display:block;background:#e3f3e8;color:#14422a}
+.err{display:block;background:#fde3e3;color:#7a1020}
+.star{color:var(--gold);font-size:28px}
+</style>
+</head>
+<body>
+<main>
+  <div class="star">★ <span style="color:#fff;font:600 14px Inter,sans-serif;letter-spacing:.5px;vertical-align:middle">DJ TRIPLEX</span></div>
+  <h1>Ønsk deg en låt</h1>
+  <p class="sub">DJ Triplex tar imot ønsker hele kvelden.</p>
+  <form id="f">
+    <label for="song">Låt og/eller artist</label>
+    <input id="song" maxlength="120" required placeholder="F.eks. Kaizers Orchestra – Kontroll på kontinentet">
+    <div class="hint">Det holder med noe vagt, som «noe med Åge».</div>
+    <label for="name">Navnet ditt (valgfritt)</label>
+    <input id="name" maxlength="40" placeholder="Berit">
+    <label for="note">Hilsen til DJ-en (valgfritt)</label>
+    <textarea id="note" maxlength="160" placeholder="Til alle på bord tre!"></textarea>
+    <button id="b" type="submit">Send ønske</button>
+    <div id="m" class="msg"></div>
+  </form>
+</main>
+<script>
+{
+  const topic = new URLSearchParams(location.search).get('t');
+  const f = document.getElementById('f'), b = document.getElementById('b'), m = document.getElementById('m');
+  const show = (cls, txt) => { m.className = 'msg ' + cls; m.textContent = txt; };
+  if (!topic) { b.disabled = true; show('err', 'Denne lenken mangler kanal. Skann QR-koden på nytt.'); }
+  let last = 0;
+  f.addEventListener('submit', async e => {
+    e.preventDefault();
+    if (Date.now() - last < 60000) { show('err', 'Rolig nå 😉 Vent litt før neste ønske.'); return; }
+    const data = {
+      song: document.getElementById('song').value.trim(),
+      name: document.getElementById('name').value.trim(),
+      note: document.getElementById('note').value.trim()
+    };
+    if (!data.song) return;
+    b.disabled = true;
+    try {
+      const r = await fetch('https://ntfy.sh/' + encodeURIComponent(topic), { method: 'POST', body: JSON.stringify(data) });
+      if (!r.ok) throw new Error(r.status);
+      last = Date.now();
+      show('ok', 'Takk! DJ-en har fått ønsket ditt 🎶');
+      document.getElementById('song').value = ''; document.getElementById('note').value = '';
+    } catch (err) {
+      show('err', 'Fikk ikke sendt. Sjekk nettet og prøv igjen.');
+    } finally { b.disabled = false; }
+  });
+}
+</script>
+</body>
+</html>
