@@ -587,7 +587,20 @@ $('login').onclick = login;
 $('devBtn').onclick = findDevices;
 $('start').onclick = start;
 $('pauseDj').onclick = () => { if (!running) return; paused = !paused; $('pauseDj').textContent = paused ? '▶ Fortsett DJ' : '⏸ Pause DJ'; log(paused ? 'DJ på pause (musikken går)' : 'DJ tilbake'); };
-$('skip').onclick = async () => { try { await sp('POST', '/me/player/next'); } catch (e) { log('⚠ ' + e.message); } };
+$('skip').onclick = async () => {
+  const btn = $('skip'); if (btn.disabled) return; btn.disabled = true;
+  try {
+    const dev = $('dev').value ? '?device_id=' + encodeURIComponent($('dev').value) : '';
+    if (cur.queued && nextUp) { await sp('POST', '/me/player/next' + dev); log('⏭ Hopper til ' + nextUp.name); }
+    else {
+      const n = nextUp || await chooseNext(); if (!n) return log('⚠ Fant ingen låt å hoppe til');
+      await sp('PUT', '/me/player/play' + dev, { uris: [n.uri] });
+      nextUp = n; log('⏭ Hopper til ' + n.name);
+    }
+    if (running && !paused) setTimeout(tick, 800);
+  } catch (e) { log('⚠ Hopp over: ' + e.message); }
+  finally { btn.disabled = false; }
+};
 $('sayBtn').onclick = () => { const t = $('say').value.trim(); if (t) { onAir(t); $('say').value = ''; } };
 $('testVoice').onclick = () => say(`Hei hei! Dette er ${$('djname').value}, og jeg er klar for ${$('event').value}!`);
 $('bigBtn').onclick = () => { $('big').style.display = 'flex'; };
