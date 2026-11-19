@@ -89,6 +89,11 @@ details summary{cursor:pointer;color:var(--gold);font-weight:600}
     <select id="dev"><option value="">(trykk «Finn enheter»)</option></select>
     <label for="voice">Stemme</label>
     <select id="voice"></select>
+    <label for="elkey">ElevenLabs API-nøkkel (valgfritt: mye bedre stemme)</label>
+    <input id="elkey" type="password" placeholder="sk_…">
+    <div class="row"><button id="elVoicesBtn">Hent ElevenLabs-stemmer</button></div>
+    <label for="elvoice">ElevenLabs-stemme</label>
+    <select id="elvoice"><option value="">(ingen: bruker Edge-stemmen over)</option></select>
     <div class="row"><button id="testVoice">Test stemmen</button></div>
     <label for="every">DJ-en snakker</label>
     <select id="every"><option value="1">Før hver låt</option><option value="2" selected>Hver 2. låt</option><option value="3">Hver 3. låt</option><option value="5">Hver 5. låt</option><option value="999">Kun ved ønsker</option></select>
@@ -99,6 +104,7 @@ details summary{cursor:pointer;color:var(--gold);font-weight:600}
       <label for="event">Om festen (brukes i replikkene)</label><input id="event" value="julebordet">
       <label for="about">Om firmaet (brukes i replikkene)</label><textarea id="about">Vi er MacGregor Norway, avdeling Fishery and Research (FAR), på Averøy. Før het vi Triplex AS, og mange sier fortsatt «Triplex». Startet i 1933 som Bjørshol Mekaniske Verksted, ble Triplex AS i 1996, så kom tyske Hatlapa inn i 2011, og nå er vi MacGregor. Søsterbrand: Rapp fra Bodø. Vi lager kraner og dekksutstyr til båter: nettkraner, dekkskraner, nettvinsjer, korkline- og blylinestablere, utstyr til ringnotbåter, trålere, brønnbåter og forskningsskip, også polarskip. Lageret på Averøy har over 6000 ulike reservedeler. Triplex-navnet: tre ting i ett.</textarea>
       <label for="key">Claude API-nøkkel (valgfritt: friere og morsommere replikker)</label><input id="key" type="password" placeholder="sk-ant-…">
+      <label for="elmodel">ElevenLabs-modell</label><input id="elmodel" value="eleven_v3">
       <label for="model">Modell</label><input id="model" value="claude-sonnet-5-5">
       <label for="topic">Ønskekanal (ntfy-topic)</label><input id="topic">
       <label for="black">Svarteliste (ett ord per linje)</label><textarea id="black"></textarea>
@@ -207,7 +213,7 @@ const clock = () => new Date().toLocaleTimeString('no-NO', { hour: '2-digit', mi
 const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 
 // ---------- persisted settings ----------
-const fields = ['cid', 'key', 'model', 'djname', 'event', 'about', 'black', 'duck', 'every', 'crate'];
+const fields = ['cid', 'key', 'elkey', 'elmodel', 'model', 'djname', 'event', 'about', 'black', 'duck', 'every', 'crate'];
 LS.set('topic', LS.get('topic', null) || 'julebord-' + rand(12));
 for (const f of fields) { const v = LS.get(f, null); if (v !== null) $(f).value = v; $(f).addEventListener('change', () => LS.set(f, $(f).value)); }
 if (!$('crate').value.trim()) $('crate').value = DEFAULT_CRATE;
@@ -289,7 +295,49 @@ function loadVoices() {
 }
 speechSynthesis.onvoiceschanged = loadVoices; loadVoices();
 $('voice').addEventListener('change', () => LS.set('voice', $('voice').value));
-function say(text) {
+// ---------- ElevenLabs ----------
+const elAudio = new Audio();
+const stripTags = t => t.replace(/\[[^\]]{1,30}\]\s*/g, '').trim();
+const useEL = () => $('elkey').value.trim() && $('elvoice').value;
+async function loadElVoices(quiet) {
+  const key = $('elkey').value.trim(); if (!key) { if (!quiet) log('⚠ Lim inn ElevenLabs-nøkkel først'); return; }
+  try {
+    const r = await fetch('https://api.elevenlabs.io/v1/voices', { headers: { 'xi-api-key': key } });
+    const j = await r.json(); if (!r.ok) throw new Error(j.detail?.message || j.detail?.status || r.status);
+    const sel = $('elvoice'), saved = LS.get('elvoice', null);
+    sel.innerHTML = '<option value="">(ingen: bruker Edge-stemmen over)</option>';
+    for (const v of j.voices || []) { const o = document.createElement('option'); o.value = v.voice_id; o.textContent = v.name + (v.labels?.accent ? ' – ' + v.labels.accent : '') + (v.category ? ' (' + v.category + ')' : ''); sel.appendChild(o); }
+    if (saved && [...sel.options].some(o => o.value === saved)) sel.value = saved;
+    if (!quiet) log('✅ Hentet ' + (j.voices || []).length + ' ElevenLabs-stemmer');
+  } catch (e) { log('⚠ ElevenLabs: ' + e.message); }
+}
+$('elVoicesBtn').onclick = () => loadElVoices(false);
+$('elvoice').addEventListener('change', () => LS.set('elvoice', $('elvoice').value));
+if ($('elkey').value.trim()) loadElVoices(true);
+async function sayEL(text) {
+  const model = $('elmodel').value.trim() || 'eleven_v3';
+  const v3 = /v3|v4/.test(model);
+  const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 15000);
+  try {
+    const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${$('elvoice').value}?output_format=mp3_44100_128`, {
+      method: 'POST', signal: ctl.signal,
+      headers: { 'xi-api-key': $('elkey').value.trim(), 'content-type': 'application/json', accept: 'audio/mpeg' },
+      body: JSON.stringify({ text: v3 ? text : stripTags(text), model_id: model,
+        voice_settings: v3 ? { stability: 0.0, similarity_boost: 0.8 } : { stability: 0.3, similarity_boost: 0.8, style: 0.6, use_speaker_boost: true } })
+    });
+    if (!r.ok) { let m = r.status; try { const j = await r.json(); m = j.detail?.message || j.detail?.status || JSON.stringify(j.detail) || m; } catch {} throw new Error(m); }
+    const url = URL.createObjectURL(await r.blob());
+    await new Promise((res, rej) => { elAudio.src = url; elAudio.onended = res; elAudio.onerror = () => rej(new Error('avspilling feilet')); elAudio.play().catch(rej); });
+    URL.revokeObjectURL(url);
+    return true;
+  } catch (e) { log('⚠ ElevenLabs: ' + e.message + ' (bruker Edge-stemmen)'); return false; }
+  finally { clearTimeout(to); }
+}
+async function say(text) {
+  if (useEL() && await sayEL(text)) return;
+  return sayBrowser(stripTags(text));
+}
+function sayBrowser(text) {
   return new Promise(res => {
     const u = new SpeechSynthesisUtterance(text);
     const v = speechSynthesis.getVoices().find(v => v.name === $('voice').value);
@@ -305,7 +353,7 @@ async function onAir(text) {
   if (talking) return; talking = true; $('onair').className = 'live'; $('onair').textContent = 'ON AIR';
   const vol = lastVol;
   try {
-    log('🎙 ' + text);
+    log('🎙 ' + stripTags(text));
     await setVol(vol * (+$('duck').value || 30) / 100);
     await new Promise(r => setTimeout(r, 400));
     await say(text);
@@ -372,7 +420,7 @@ Vær ordentlig morsom. Varier mellom disse grepene, aldri samme to ganger på ra
 - en ordentlig dårlig ordspill-vits, som du selv innrømmer er dårlig
 - innsidehumor om firmaet (se under): kraner, vinsjer, løft, «Triplex-kvalitet», reservedeler, «vi løfter stemningen», fra Triplex til MacGregor
 
-Stil: muntlig, med rytme og punchline til slutt, som om du står med mikrofonen. Nevn låttittel og artist naturlig. Rop ditt eget DJ-navn bare innimellom. Ved rolig middagsstemning: lunere og lavmælt humor, ingen oppfordring til å danse. Ved fest: høy energi, få folk ut på gulvet.
+${useEL() && /v3|v4/.test($('elmodel').value) ? 'Du blir lest opp av en uttrykksfull AI-stemme. Bruk gjerne 1–2 lydtagger på engelsk i hakeparentes der det passer, for eksempel [excited], [laughs], [shouting], [whispers], [chuckles] eller [sighs]. Ingen andre hakeparenteser. ' : ''}Stil: muntlig, med rytme og punchline til slutt, som om du står med mikrofonen. Nevn låttittel og artist naturlig. Rop ditt eget DJ-navn bare innimellom. Ved rolig middagsstemning: lunere og lavmælt humor, ingen oppfordring til å danse. Ved fest: høy energi, få folk ut på gulvet.
 
 Om firmaet som har julebord: ${$('about').value}
 Bruk firmahumor omtrent hver tredje replikk, ikke hele tiden. Ikke finn på fakta om firmaet utover dette.
@@ -469,6 +517,7 @@ async function tick() {
 
 async function start() {
   speechSynthesis.speak(new SpeechSynthesisUtterance('')); // låser opp lyd i nettleseren
+  elAudio.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA='; elAudio.play().catch(() => {});
   if (running) { paused = false; $('pauseDj').textContent = '⏸ Pause DJ'; return; }
   try {
     await token();
