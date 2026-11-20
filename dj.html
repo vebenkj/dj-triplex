@@ -273,9 +273,9 @@ const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 const fields = ['cid', 'key', 'ntfytok', 'elkey', 'elmodel', 'model', 'lang', 'djname', 'event', 'about', 'black', 'duck', 'every', 'crate'];
 { const sh = LS.get('shuffle', null); if (sh !== null) $('shuffle').checked = sh; $('shuffle').addEventListener('change', () => LS.set('shuffle', $('shuffle').checked)); }
 LS.set('topic', LS.get('topic', null) || 'julebord-' + rand(12));
-// Nøkler kan også gis i adressen: dj.html#key=…&elkey=…&elvoice=… (lagres lokalt, fjernes så fra adresselinja)
+// Nøkler kan også gis i adressen: dj.html#key=…&elkey=…&ntfytok=…&elvoice=… (lagres lokalt, fjernes så fra adresselinja)
 { const h = new URLSearchParams(location.hash.slice(1)); let got = false;
-  for (const k of ['key', 'elkey', 'elvoice', 'elmodel', 'model']) if (h.get(k)) { LS.set(k, h.get(k)); got = true; }
+  for (const k of ['key', 'elkey', 'ntfytok', 'elvoice', 'elmodel', 'model']) if (h.get(k)) { LS.set(k, h.get(k)); got = true; }
   if (got) { location.replace(location.pathname + location.search); throw new Error('laster på nytt med nøkler'); } }
 window.addEventListener('hashchange', () => { if (/(^|[#&])(key|elkey)=/.test(location.hash)) location.reload(); });
 // engangsoppdatering av lagrede tekster fra eldre versjon
