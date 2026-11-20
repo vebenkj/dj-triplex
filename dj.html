@@ -55,6 +55,7 @@ button.red{background:var(--red);border-color:var(--red)}
 .tag.venter{background:var(--gold);color:#000}.tag.klar{background:var(--green);color:#000}.tag.avvist{background:#555}
 #log{height:220px;overflow:auto;font:12.5px ui-monospace,Consolas,monospace;color:var(--dim);white-space:pre-wrap}
 #qr,#rqr{background:#fff;padding:10px;border-radius:10px;display:inline-block}
+input.secret{-webkit-text-security:disc;font-family:ui-monospace,Consolas,monospace}
 summary.h2{list-style:none;cursor:pointer;font-weight:700;color:var(--gold);font-size:15px}
 summary.h2::-webkit-details-marker{display:none}
 summary.h2::before{content:'▸ '}details[open]>summary.h2::before{content:'▾ '}
@@ -143,7 +144,7 @@ details summary{cursor:pointer;color:var(--gold);font-weight:600}
     <label for="voice">Stemme</label>
     <select id="voice"></select>
     <label for="elkey">ElevenLabs API-nøkkel (valgfritt: mye bedre stemme)</label>
-    <input id="elkey" type="password" placeholder="sk_…">
+    <input id="elkey" type="text" class="secret" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore data-form-type="other" placeholder="sk_…">
     <div class="row"><button id="elVoicesBtn">Hent ElevenLabs-stemmer</button></div>
     <label for="elvoice">ElevenLabs-stemme</label>
     <select id="elvoice"><option value="">(ingen: bruker Edge-stemmen over)</option></select>
@@ -158,12 +159,12 @@ details summary{cursor:pointer;color:var(--gold);font-weight:600}
       <label for="djname">DJ-navn</label><input id="djname" value="DJ Triplex">
       <label for="event">Om festen (brukes i replikkene)</label><input id="event" value="julebordet til MacGregor (tidligere Triplex) på Molde Fjordhotell, med buffet av varm julemat">
       <label for="about">Om firmaet (brukes i replikkene)</label><textarea id="about">Vi er MacGregor Norway, avdeling Fishery and Research (FAR), på Averøy. Før het vi Triplex AS, og mange sier fortsatt «Triplex». Startet i 1933 som Bjørshol Mekaniske Verksted, ble Triplex AS i 1996, så kom tyske Hatlapa inn i 2011, og nå er vi MacGregor. Søsterbrand: Rapp fra Bodø. Vi lager kraner og dekksutstyr til båter: nettkraner, dekkskraner, nettvinsjer, korkline- og blylinestablere, utstyr til ringnotbåter, trålere, brønnbåter og forskningsskip, også polarskip. Lageret på Averøy har over 6000 ulike reservedeler. Triplex-navnet: tre ting i ett. Avdelinger og gjenger på julebordet: kontorgjengen, lageret og servicegjengen. DJ-en kan heie på dem, utfordre dem til dansekonkurranse mot hverandre og spøke vennlig med dem som gruppe, for eksempel om hvem som er først i buffetkøen, hvem som finner frem på dansegulvet, og om servicegjengen som alltid er ute på oppdrag.</textarea>
-      <label for="key">Claude API-nøkkel (valgfritt: friere og morsommere replikker)</label><input id="key" type="password" placeholder="sk-ant-…">
+      <label for="key">Claude API-nøkkel (valgfritt: friere og morsommere replikker)</label><input id="key" type="text" class="secret" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore data-form-type="other" placeholder="sk-ant-…">
       <label for="elmodel">ElevenLabs-modell</label><input id="elmodel" value="eleven_v3">
       <label for="model">Modell</label><input id="model" value="claude-sonnet-5-5">
       <label for="topic">Ønskekanal (ntfy-topic)</label><input id="topic">
       <label for="ntfytok">ntfy-tilgangsnøkkel (Supporter-konto, valgfritt: gir 2 500 meldinger i døgnet i stedet for 250 per nett)</label>
-      <input id="ntfytok" type="password" placeholder="tk_…">
+      <input id="ntfytok" type="text" class="secret" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore data-form-type="other" placeholder="tk_…">
       <label for="black">Svarteliste (ett ord per linje)</label><textarea id="black"></textarea>
       <label>Fjernkontroll for DJ-hjelpere (start, pause, hopp over, stemning, beskjeder)</label>
       <div id="rqr"></div>
@@ -957,6 +958,8 @@ $('copyUrl').onclick = async () => { try { await navigator.clipboard.writeText(g
 
 handleCallback().then(() => { if (LS.get('tok', null)) findDevices(); });
 $('ntfytok').addEventListener('change', () => { ntfyBlockedUntil = 0; ntfyWarned = false; drawQR(); drawRemoteQR(); log(ntfyTok() ? '🔑 ntfy-nøkkel satt. Skriv ut/vis QR-kodene på nytt.' : 'ntfy-nøkkel fjernet'); });
+{ const tail = id => { const v = $(id).value.trim(); return v ? '…' + v.slice(-4) : 'mangler'; };
+  log('🔑 Lagrede nøkler: Claude ' + tail('key') + ', ElevenLabs ' + tail('elkey') + ', ntfy ' + tail('ntfytok')); }
 drawQR(); listen(); renderReqs(); drawRemoteQR(); listenCtl(); showVol(); renderPlan(); pushStatus(); pushGuestList(false);
 log('Klar. Gjesteside: ' + guestUrl().split('#')[0]);
 }
