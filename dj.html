@@ -120,6 +120,17 @@ details summary{cursor:pointer;color:var(--gold);font-weight:600}
   </section>
 
   <section class="p" id="setupSec"><details id="setup"><summary class="h2">Oppsett</summary>
+    <details id="genBox" style="margin:10px 0 14px;border:1px solid var(--line);border-radius:10px;padding:10px">
+      <summary style="cursor:pointer;font-weight:600">✨ Lag ny spilleliste med Claude</summary>
+      <label for="genDesc">Beskriv lista du vil ha</label>
+      <textarea id="genDesc" style="min-height:80px;font:14px system-ui,sans-serif" placeholder="Rolige julesanger til middagen (norske og internasjonale). Til festen: 80- og 90-tallsfest, allsang, litt norsk pop og noen julelåter med fart."></textarea>
+      <div class="row"><label style="margin:0;flex:1">Antall låter <input id="genN" type="number" min="10" max="150" value="60" style="width:80px"></label>
+        <label style="margin:0;flex:1"><input type="checkbox" id="genCheck" checked style="width:auto"> Sjekk at låtene finnes på Spotify</label></div>
+      <div class="row"><button id="genBtn">✨ Lag forslag</button></div>
+      <p id="genStatus" style="color:var(--dim);font-size:13px;margin:6px 0"></p>
+      <textarea id="genOut" style="display:none;min-height:220px"></textarea>
+      <div class="row" id="genActs" style="display:none"><button id="genReplace">Erstatt lista</button><button id="genAppend">Legg til nederst</button><button id="genDiscard">Forkast</button></div>
+    </details>
     <label for="cid">Spotify Client ID</label>
     <input id="cid" value="43791d06e25e45a889936c92ecde0a72" placeholder="fra developer.spotify.com">
     <div class="row"><button id="login">Logg inn på Spotify</button><button id="devBtn">Finn enheter</button></div>
@@ -763,6 +774,71 @@ async function playNow(q) {
 }
 $('editCrate').onclick = () => { const open = $('crateBox').style.display === 'none'; $('crateBox').style.display = open ? '' : 'none'; $('plan').style.display = open ? 'none' : ''; $('editCrate').textContent = open ? '✓ Ferdig' : '✏️ Rediger lista'; if (!open) renderPlan(); };
 $('crate').addEventListener('input', () => renderPlan());
+// ---------- lag spilleliste med Claude ----------
+async function callClaude(system, user, { timeout = 120000, maxTokens = 8000 } = {}) {
+  const key = $('key').value.trim(); if (!key) throw new Error('mangler Claude API-nøkkel (Oppsett → Mer)');
+  const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), timeout);
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST', signal: ctl.signal,
+      headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json', 'anthropic-dangerous-direct-browser-access': 'true' },
+      body: JSON.stringify({ model: $('model').value.trim() || 'claude-sonnet-5-5', max_tokens: maxTokens, system, messages: [{ role: 'user', content: user }] })
+    });
+    const j = await r.json(); if (!r.ok) throw new Error(j.error?.message || r.status);
+    const text = (j.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n').trim();
+    if (!text) throw new Error('tomt svar (stop_reason: ' + (j.stop_reason || '?') + ')');
+    return text;
+  } catch (e) { throw e.name === 'AbortError' ? new Error('brukte mer enn ' + Math.round(timeout / 1000) + ' sekunder') : e; }
+  finally { clearTimeout(to); }
+}
+const genLine = /^\s*(rolig|fest|begge)\s*\|\s*(.+?\s+-\s+.+?)\s*$/i;
+$('genBtn').onclick = async () => {
+  const desc = $('genDesc').value.trim(); if (!desc) return $('genStatus').textContent = 'Skriv en beskrivelse først.';
+  const n = Math.max(10, Math.min(150, +$('genN').value || 60));
+  const btn = $('genBtn'); btn.disabled = true; $('genActs').style.display = 'none'; $('genOut').style.display = 'none';
+  const t0 = Date.now(); const tick2 = setInterval(() => $('genStatus').textContent = '⏳ Claude lager lista … ' + Math.round((Date.now() - t0) / 1000) + ' s (kan ta et minutt)', 1000);
+  try {
+    const sys = `Du lager spillelister for en DJ-konsoll. Arrangementet: ${$('event').value}. Om firmaet: ${$('about').value}
+Svar KUN med låtlinjer, én per linje, i nøyaktig dette formatet:
+rolig | Artist - Låttittel
+fest | Artist - Låttittel
+begge | Artist - Låttittel
+«rolig» = middag og bakgrunn, «fest» = dansegulv, «begge» = passer til begge. Bruk ekte, kjente låter som finnes på Spotify, med riktig stavemåte på artist og tittel (originalartist, ikke coverversjoner). Ingen duplikater, ingen nummerering, ingen overskrifter, ingen kommentarer, ingen tomme linjer. Sorter lista i den rekkefølgen den bør spilles innen hver stemning: rolige låter i stigende stemning, festlåter med god flyt og energi.`;
+    const out = await callClaude(sys, `Lag en spilleliste med omtrent ${n} låter. Ønsker: ${desc}`);
+    let lines = out.split('\n').map(l => l.trim()).filter(l => genLine.test(l)).map(l => { const m = l.match(genLine); return m[1].toLowerCase() + ' | ' + m[2]; });
+    lines = [...new Set(lines)];
+    if (!lines.length) throw new Error('fikk ikke gyldige låtlinjer tilbake');
+    let note = '';
+    if ($('genCheck').checked) {
+      try {
+        await token(); const ok = [], miss = [];
+        for (let i = 0; i < lines.length; i++) {
+          $('genStatus').textContent = '🔎 Sjekker på Spotify ' + (i + 1) + '/' + lines.length + ' …';
+          const q = lines[i].split('|')[1].trim(); const tr = await resolve(q).catch(() => null);
+          (tr ? ok : miss).push(lines[i]);
+        }
+        lines = ok; note = miss.length ? ` ${miss.length} fant jeg ikke på Spotify og er fjernet: ${miss.map(l => l.split('|')[1].trim()).join('; ')}` : ' Alle finnes på Spotify.';
+      } catch (e) { note = ' (Ikke sjekket mot Spotify: ' + e.message + ')'; }
+    }
+    clearInterval(tick2);
+    $('genOut').value = lines.join('\n'); $('genOut').style.display = ''; $('genActs').style.display = '';
+    $('genStatus').textContent = `✅ ${lines.length} låter klare på ${Math.round((Date.now() - t0) / 1000)} s.${note} Se over og velg under.`;
+    log('✨ Ny spilleliste foreslått: ' + lines.length + ' låter');
+  } catch (e) { clearInterval(tick2); $('genStatus').textContent = '⚠ ' + e.message; log('⚠ Spilleliste: ' + e.message); }
+  finally { btn.disabled = false; }
+};
+function useGen(replace) {
+  const add = $('genOut').value.trim(); if (!add) return;
+  $('crate').value = replace ? add : ($('crate').value.trim() + '\n' + add);
+  LS.set('crate', $('crate').value); played.clear(); doneQ.clear();
+  $('genActs').style.display = 'none'; $('genOut').style.display = 'none';
+  $('genStatus').textContent = replace ? 'Lista er erstattet.' : 'Låtene er lagt til nederst.';
+  renderPlan(); pushGuestList(true); pushStatus(); log(replace ? '📜 Spillelista er erstattet' : '📜 Nye låter lagt til i spillelista');
+}
+$('genReplace').onclick = () => useGen(true);
+$('genAppend').onclick = () => useGen(false);
+$('genDiscard').onclick = () => { $('genActs').style.display = 'none'; $('genOut').style.display = 'none'; $('genStatus').textContent = 'Forslaget er forkastet.'; };
+{ const g = LS.get('genDesc', null); if (g) $('genDesc').value = g; $('genDesc').addEventListener('input', () => LS.set('genDesc', $('genDesc').value)); }
 async function askDj(text) {
   text = String(text || '').trim().slice(0, 300); if (!text) return;
   log('✨ Bestilling: ' + text);
