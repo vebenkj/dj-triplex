@@ -47,6 +47,8 @@ li{margin:3px 0}
     <button id="bSkip">⏭ Hopp over</button>
   </div>
   <div class="row"><button id="bMusic">⏯ Pause musikken</button></div>
+  <h2 style="margin-top:14px">Spotify-volum: <span id="volV">–</span></h2>
+  <div class="row"><button id="vDn" style="flex:0 0 64px">−</button><input id="vR" type="range" min="0" max="100" step="5" style="flex:1"><button id="vUp" style="flex:0 0 64px">+</button></div>
   <div class="row">
     <button id="mRolig">🍽 Middag</button>
     <button id="mFest">🕺 Fest</button>
@@ -54,7 +56,14 @@ li{margin:3px 0}
 </section>
 
 <section class="p">
-  <h2>La DJ-en si noe</h2>
+  <h2>Be DJ-en om noe</h2>
+  <input id="ask" maxlength="300" placeholder="Si at buffeten er påfylt, og utfordre lageret til dansekonkurranse">
+  <div class="row"><button id="bAsk">✨ DJ-en lager og sier det</button></div>
+  <p class="small">Claude skriver replikken i DJ-stilen. Tar noen sekunder.</p>
+</section>
+
+<section class="p">
+  <h2>La DJ-en si noe (ordrett)</h2>
   <input id="say" maxlength="300" placeholder="Desserten er servert! Kom og forsyn dere.">
   <div class="row"><button id="bSay">🎙 Send til DJ-en</button></div>
 </section>
@@ -99,6 +108,11 @@ else {
   $('bMusic').onclick = () => send({ cmd: 'music', play: st ? st.music === false : undefined });
   $('mRolig').onclick = () => send({ cmd: 'mode', m: 'rolig' });
   $('mFest').onclick = () => send({ cmd: 'mode', m: 'fest' });
+  $('bAsk').onclick = () => { const t = $('ask').value.trim(); if (!t) return; send({ cmd: 'ask', text: t }); $('ask').value = ''; };
+  $('ask').addEventListener('keydown', e => { if (e.key === 'Enter') $('bAsk').click(); });
+  $('vDn').onclick = () => send({ cmd: 'vol', d: -10 });
+  $('vUp').onclick = () => send({ cmd: 'vol', d: 10 });
+  $('vR').addEventListener('change', () => { $('volV').textContent = $('vR').value + ' %'; send({ cmd: 'vol', v: +$('vR').value }); });
   $('bSay').onclick = () => { const t = $('say').value.trim(); if (!t) return; send({ cmd: 'say', text: t }); $('say').value = ''; };
   $('say').addEventListener('keydown', e => { if (e.key === 'Enter') $('bSay').click(); });
 
@@ -112,6 +126,7 @@ else {
     $('air').textContent = !st.running ? 'IKKE STARTET' : st.paused ? 'DJ PAUSE' : st.talking ? 'ON AIR' : 'SPILLER';
     $('air').className = 'pill' + (st.running && !st.paused ? ' live' : '');
     $('bPause').textContent = st.paused ? '▶ Fortsett DJ' : '⏸ Pause DJ';
+    if (st.vol == null) { $('volV').textContent = st.running ? 'ikke støttet' : '–'; } else { $('volV').textContent = st.vol + ' %'; if (document.activeElement !== $('vR')) $('vR').value = st.vol; }
     $('bMusic').textContent = st.music === false ? '▶ Spill musikken' : '⏯ Pause musikken';
     $('mRolig').className = st.mode === 'rolig' ? 'on' : ''; $('mFest').className = st.mode === 'fest' ? 'on' : '';
     fill('reqs', (st.reqs || []).map(r => li(r.s + (r.n ? ' (fra ' + r.n + ')' : ''), r.st)), 'Ingen ønsker ennå.');
