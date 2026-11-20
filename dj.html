@@ -696,15 +696,30 @@ function statusObj() {
   for (const q of crateList) { o.list.push(q); if (JSON.stringify(o).length > 3600) { o.list.pop(); o.more = crateList.length - o.list.length; break; } }
   return o;
 }
-function pushStatus() {
-  clearTimeout(pushT);
-  const wait = Math.max(0, 6000 - (Date.now() - lastPush)); // ntfy.sh tåler ikke spam
-  pushT = setTimeout(async () => {
-    lastPush = Date.now();
-    try { await fetch('https://ntfy.sh/' + encodeURIComponent(LS.get('ctl') + '-s'), { method: 'POST', body: JSON.stringify(statusObj()) }); } catch {}
-  }, Math.max(wait, 400));
+// ntfy.sh gir 250 meldinger per døgn per IP-adresse. Status sendes derfor bare
+// når en fjernkontroll har vært aktiv de siste 3 minuttene, og maks hvert 10. sekund.
+var lastRemote = 0, ntfyBlockedUntil = 0, ntfyWarned = false;
+async function ntfyPost(topic, body) {
+  if (Date.now() < ntfyBlockedUntil) return false;
+  try {
+    const r = await fetch('https://ntfy.sh/' + encodeURIComponent(topic), { method: 'POST', body });
+    if (r.status === 429) {
+      let reset = Date.now() + 15 * 60000;
+      try { const a = await (await fetch('https://ntfy.sh/v1/account')).json(); if (a?.stats?.messages_remaining === 0 && a.stats.reset_at) reset = a.stats.reset_at * 1000; } catch {}
+      ntfyBlockedUntil = reset;
+      if (!ntfyWarned) { ntfyWarned = true; log('⚠ ntfy-kvoten for denne internettforbindelsen er brukt opp (250 meldinger per døgn). Fjernkontroll-status og spilleliste til gjestene stopper til ca. kl. ' + new Date(reset).toTimeString().slice(0, 5) + '. Ønsker og kommandoer fra mobiler på annet nett virker fortsatt. Tips: koble laptopen til mobil-hotspot.'); }
+      return false;
+    }
+    return r.ok;
+  } catch { return false; }
 }
-setInterval(pushStatus, 30000);
+function pushStatus(force) {
+  if (!force && !(Date.now() - (lastRemote || 0) <= 180000)) return; // ingen fjernkontroll åpen
+  clearTimeout(pushT);
+  const wait = Math.max(0, 10000 - (Date.now() - lastPush));
+  pushT = setTimeout(() => { lastPush = Date.now(); ntfyPost(LS.get('ctl') + '-s', JSON.stringify(statusObj())); }, Math.max(wait, 400));
+}
+setInterval(() => pushStatus(), 60000);
 // spillelista til gjestesiden (egen kanal: <ønskekanal>-liste)
 var listT = null, lastListJson = '';
 function pushGuestList(force) {
@@ -713,14 +728,16 @@ function pushGuestList(force) {
     const c = crate(), pick = t => c.filter(x => x.tag === t).map(x => x.q);
     const o = { t: Date.now(), m: pick('rolig'), f: pick('fest'), b: pick('begge') };
     while (JSON.stringify(o).length > 3800) { const k = o.f.length >= o.m.length ? 'f' : 'm'; o[k].pop(); o.more = (o.more || 0) + 1; }
-    const js = JSON.stringify(o); if (!force && js.replace(/"t":\d+,/, '') === lastListJson) return;
-    lastListJson = js.replace(/"t":\d+,/, '');
-    try { await fetch('https://ntfy.sh/' + encodeURIComponent(LS.get('topic') + '-liste'), { method: 'POST', body: js }); } catch {}
+    const js = JSON.stringify(o), key = js.replace(/"t":\d+,/, '');
+    const sent = LS.get('listSent', null); // samme liste sendt de siste 6 timene? da sparer vi en melding
+    if (!force && sent && sent.k === key && Date.now() - sent.t < 6 * 3600 * 1000) return;
+    if (await ntfyPost(LS.get('topic') + '-liste', js)) LS.set('listSent', { k: key, t: Date.now() });
   }, 1500);
 }
-$('crate').addEventListener('input', () => pushGuestList(false));
 setInterval(() => pushGuestList(true), 6 * 3600 * 1000); // ntfy tar vare på meldinger i 12 timer
 async function handleCmd(c) {
+  const wasIdle = !(Date.now() - (lastRemote || 0) <= 180000); lastRemote = Date.now();
+  if (c.cmd === 'ping') { if (wasIdle) log('📱 Fjernkontroll koblet til'); pushStatus(true); return; }
   log('📱 Fjernkontroll: ' + c.cmd + (c.m ? ' ' + c.m : ''));
   if (c.cmd === 'start') { if (!running) await start(); else setPaused(false); }
   else if (c.cmd === 'pause') setPaused(true);
@@ -733,7 +750,6 @@ async function handleCmd(c) {
   else if (c.cmd === 'master') await setMaster(c.v != null ? +c.v : masterVol + (+c.d || 0));
   else if (c.cmd === 'mode') setMode(c.m);
   else if (c.cmd === 'say' && c.text) onAir(String(c.text).slice(0, 300));
-  else if (c.cmd === 'ping') pushStatus();
   pushStatus();
 }
 function listenCtl() {
@@ -790,7 +806,7 @@ async function playNow(q) {
     if (running && !paused) setTimeout(tick, 800);
   } catch (e) { log('⚠ Spill nå: ' + e.message); }
 }
-$('editCrate').onclick = () => { const open = $('crateBox').style.display === 'none'; $('crateBox').style.display = open ? '' : 'none'; $('plan').style.display = open ? 'none' : ''; $('editCrate').textContent = open ? '✓ Ferdig' : '✏️ Rediger lista'; if (!open) renderPlan(); };
+$('editCrate').onclick = () => { const open = $('crateBox').style.display === 'none'; $('crateBox').style.display = open ? '' : 'none'; $('plan').style.display = open ? 'none' : ''; $('editCrate').textContent = open ? '✓ Ferdig' : '✏️ Rediger lista'; if (!open) { renderPlan(); pushGuestList(false); } };
 $('crate').addEventListener('input', () => renderPlan());
 // ---------- lag spilleliste med Claude ----------
 async function callClaude(system, user, { timeout = 120000, maxTokens = 8000 } = {}) {
@@ -936,7 +952,7 @@ $('big').onclick = () => { $('big').style.display = 'none'; };
 $('copyUrl').onclick = async () => { try { await navigator.clipboard.writeText(guestUrl()); log('Lenke kopiert: ' + guestUrl()); } catch { log(guestUrl()); } };
 
 handleCallback().then(() => { if (LS.get('tok', null)) findDevices(); });
-drawQR(); listen(); renderReqs(); drawRemoteQR(); listenCtl(); showVol(); renderPlan(); pushStatus(); pushGuestList(true);
+drawQR(); listen(); renderReqs(); drawRemoteQR(); listenCtl(); showVol(); renderPlan(); pushStatus(); pushGuestList(false);
 log('Klar. Gjesteside: ' + guestUrl());
 }
 </script>
