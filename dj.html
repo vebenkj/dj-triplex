@@ -89,6 +89,12 @@ details summary{cursor:pointer;color:var(--gold);font-weight:600}
     <div id="reqs"><p style="color:var(--dim)">Ingen ønsker ennå.</p></div>
   </section>
 
+  <section class="p">
+    <h2>Spillekista</h2>
+    <label for="crate">Format: <code>rolig</code>, <code>fest</code> eller <code>begge</code> | Artist - Låt</label>
+    <textarea id="crate" style="min-height:260px"></textarea>
+  </section>
+
   <section class="p"><details id="setup"><summary class="h2">Oppsett</summary>
     <label for="cid">Spotify Client ID</label>
     <input id="cid" value="43791d06e25e45a889936c92ecde0a72" placeholder="fra developer.spotify.com">
@@ -122,11 +128,6 @@ details summary{cursor:pointer;color:var(--gold);font-weight:600}
     </details>
   </details></section>
 
-  <section class="p">
-    <h2>Spillekista</h2>
-    <label for="crate">Format: <code>rolig</code>, <code>fest</code> eller <code>begge</code> | Artist - Låt</label>
-    <textarea id="crate" style="min-height:260px"></textarea>
-  </section>
 
   <section class="p">
     <h2>Logg</h2>
@@ -651,6 +652,21 @@ function pushStatus() {
   }, Math.max(wait, 400));
 }
 setInterval(pushStatus, 30000);
+// spillelista til gjestesiden (egen kanal: <ønskekanal>-liste)
+var listT = null, lastListJson = '';
+function pushGuestList(force) {
+  clearTimeout(listT);
+  listT = setTimeout(async () => {
+    const c = crate(), pick = t => c.filter(x => x.tag === t).map(x => x.q);
+    const o = { t: Date.now(), m: pick('rolig'), f: pick('fest'), b: pick('begge') };
+    while (JSON.stringify(o).length > 3800) { const k = o.f.length >= o.m.length ? 'f' : 'm'; o[k].pop(); o.more = (o.more || 0) + 1; }
+    const js = JSON.stringify(o); if (!force && js.replace(/"t":\d+,/, '') === lastListJson) return;
+    lastListJson = js.replace(/"t":\d+,/, '');
+    try { await fetch('https://ntfy.sh/' + encodeURIComponent(LS.get('topic') + '-liste'), { method: 'POST', body: js }); } catch {}
+  }, 1500);
+}
+$('crate').addEventListener('input', () => pushGuestList(false));
+setInterval(() => pushGuestList(true), 6 * 3600 * 1000); // ntfy tar vare på meldinger i 12 timer
 async function handleCmd(c) {
   log('📱 Fjernkontroll: ' + c.cmd + (c.m ? ' ' + c.m : ''));
   if (c.cmd === 'start') { if (!running) await start(); else setPaused(false); }
@@ -738,7 +754,7 @@ $('big').onclick = () => { $('big').style.display = 'none'; };
 $('copyUrl').onclick = async () => { try { await navigator.clipboard.writeText(guestUrl()); log('Lenke kopiert: ' + guestUrl()); } catch { log(guestUrl()); } };
 
 handleCallback().then(() => { if (LS.get('tok', null)) findDevices(); });
-drawQR(); listen(); renderReqs(); drawRemoteQR(); listenCtl(); showVol(); pushStatus();
+drawQR(); listen(); renderReqs(); drawRemoteQR(); listenCtl(); showVol(); pushStatus(); pushGuestList(true);
 log('Klar. Gjesteside: ' + guestUrl());
 }
 </script>
