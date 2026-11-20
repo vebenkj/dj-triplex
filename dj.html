@@ -143,6 +143,8 @@ details summary{cursor:pointer;color:var(--gold);font-weight:600}
     <div class="row"><button id="elVoicesBtn">Hent ElevenLabs-stemmer</button></div>
     <label for="elvoice">ElevenLabs-stemme</label>
     <select id="elvoice"><option value="">(ingen: bruker Edge-stemmen over)</option></select>
+    <label for="lang">Språk for replikker</label>
+    <select id="lang"><option value="no">Norsk</option><option value="mix">Norsk med engelske radiouttrykk</option><option value="en">Engelsk</option></select>
     <div class="row"><button id="testVoice">Test stemmen</button></div>
     <label for="every">DJ-en snakker</label>
     <select id="every"><option value="1">Før hver låt</option><option value="2" selected>Hver 2. låt</option><option value="3">Hver 3. låt</option><option value="5">Hver 5. låt</option><option value="999">Kun ved ønsker</option></select>
@@ -258,7 +260,7 @@ const clock = () => new Date().toLocaleTimeString('no-NO', { hour: '2-digit', mi
 const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 
 // ---------- persisted settings ----------
-const fields = ['cid', 'key', 'elkey', 'elmodel', 'model', 'djname', 'event', 'about', 'black', 'duck', 'every', 'crate'];
+const fields = ['cid', 'key', 'elkey', 'elmodel', 'model', 'lang', 'djname', 'event', 'about', 'black', 'duck', 'every', 'crate'];
 { const sh = LS.get('shuffle', null); if (sh !== null) $('shuffle').checked = sh; $('shuffle').addEventListener('change', () => LS.set('shuffle', $('shuffle').checked)); }
 LS.set('topic', LS.get('topic', null) || 'julebord-' + rand(12));
 // Nøkler kan også gis i adressen: dj.html#key=…&elkey=…&elvoice=… (lagres lokalt, fjernes så fra adresselinja)
@@ -472,11 +474,17 @@ function templateLine(track, req) {
   if (req && req.note) s += ' Og hilsenen er: ' + req.note;
   return s;
 }
+function langRule() {
+  const l = $('lang') ? $('lang').value : 'no';
+  if (l === 'en') return 'SPRÅK: Skriv replikken på engelsk, som en energisk amerikansk/britisk radio-DJ. Publikum er norsk, så hold engelsken enkel og tydelig. Norske navn, steder, firmanavn og låttitler beholdes som de er. Instruksene under er på norsk, men svaret skal være på engelsk.';
+  if (l === 'mix') return 'SPRÅK: Skriv på norsk bokmål, men strø inn ett eller to typiske engelske radio-DJ-uttrykk per replikk, for eksempel «Coming up next!», «Put your hands up!», «Let\'s go!», «Party people!» eller «Stay tuned!».';
+  return 'SPRÅK: Skriv på norsk bokmål.';
+}
 async function claudeLine(track, req, ask) {
   const key = $('key').value.trim(); if (!key) { if (ask) log('⚠ Mangler Claude API-nøkkel (under Oppsett → Mer)'); return null; }
   const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), ask ? 15000 : 7000);
   try {
-    const sys = `Du er radio-DJ-en «${$('djname').value}» på ${$('event').value}. Du er en kjent norsk radioprat-vert: kvikk, selvironisk, litt overdreven og veldig glad i publikum. Skriv ÉN replikk på norsk bokmål som leses høyt over introen på neste låt: maks 2–3 korte setninger, under 40 ord.
+    const sys = `Du er radio-DJ-en «${$('djname').value}» på ${$('event').value}. Du er en kjent radioprat-vert: kvikk, selvironisk, litt overdreven og veldig glad i publikum. ${langRule()} Skriv ÉN replikk som leses høyt over introen på neste låt: maks 2–3 korte setninger, under 40 ord.
 
 Vær ordentlig morsom. Varier mellom disse grepene, aldri samme to ganger på rad:
 - en kort, sann og overraskende fun fact om låta, artisten eller utgivelsesåret (bare om du er sikker)
@@ -887,7 +895,7 @@ $('skip').onclick = async () => {
   finally { btn.disabled = false; }
 };
 $('sayBtn').onclick = () => { const t = $('say').value.trim(); if (t) { onAir(t); $('say').value = ''; } };
-$('testVoice').onclick = () => say(`Hei hei! Dette er ${$('djname').value}, og jeg er klar for ${$('event').value}!`);
+$('testVoice').onclick = () => say($('lang').value === 'en' ? `Hey hey! This is ${$('djname').value}, and I am ready to party!` : $('lang').value === 'mix' ? `Hei hei, party people! Dette er ${$('djname').value}, og jeg er klar. Let's go!` : `Hei hei! Dette er ${$('djname').value}, og jeg er klar for festen!`);
 $('bigBtn').onclick = () => { $('big').style.display = 'flex'; };
 $('big').onclick = () => { $('big').style.display = 'none'; };
 $('copyUrl').onclick = async () => { try { await navigator.clipboard.writeText(guestUrl()); log('Lenke kopiert: ' + guestUrl()); } catch { log(guestUrl()); } };
