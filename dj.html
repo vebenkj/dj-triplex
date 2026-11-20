@@ -162,6 +162,8 @@ details summary{cursor:pointer;color:var(--gold);font-weight:600}
       <label for="elmodel">ElevenLabs-modell</label><input id="elmodel" value="eleven_v3">
       <label for="model">Modell</label><input id="model" value="claude-sonnet-5-5">
       <label for="topic">Ønskekanal (ntfy-topic)</label><input id="topic">
+      <label for="ntfytok">ntfy-tilgangsnøkkel (Supporter-konto, valgfritt: gir 2 500 meldinger i døgnet i stedet for 250 per nett)</label>
+      <input id="ntfytok" type="password" placeholder="tk_…">
       <label for="black">Svarteliste (ett ord per linje)</label><textarea id="black"></textarea>
       <label>Fjernkontroll for DJ-hjelpere (start, pause, hopp over, stemning, beskjeder)</label>
       <div id="rqr"></div>
@@ -267,7 +269,7 @@ const clock = () => new Date().toLocaleTimeString('no-NO', { hour: '2-digit', mi
 const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 
 // ---------- persisted settings ----------
-const fields = ['cid', 'key', 'elkey', 'elmodel', 'model', 'lang', 'djname', 'event', 'about', 'black', 'duck', 'every', 'crate'];
+const fields = ['cid', 'key', 'ntfytok', 'elkey', 'elmodel', 'model', 'lang', 'djname', 'event', 'about', 'black', 'duck', 'every', 'crate'];
 { const sh = LS.get('shuffle', null); if (sh !== null) $('shuffle').checked = sh; $('shuffle').addEventListener('change', () => LS.set('shuffle', $('shuffle').checked)); }
 LS.set('topic', LS.get('topic', null) || 'julebord-' + rand(12));
 // Nøkler kan også gis i adressen: dj.html#key=…&elkey=…&elvoice=… (lagres lokalt, fjernes så fra adresselinja)
@@ -636,7 +638,9 @@ async function start() {
 }
 
 // ---------- requests via ntfy ----------
-function guestUrl() { return new URL('index.html', location.href).href.split('?')[0] + '?t=' + encodeURIComponent(LS.get('topic')); }
+const ntfyTok = () => ($('ntfytok') ? $('ntfytok').value.trim() : '');
+const ntfyAuth = () => ntfyTok() ? { Authorization: 'Bearer ' + ntfyTok() } : {};
+function guestUrl() { return new URL('index.html', location.href).href.split('?')[0] + '?t=' + encodeURIComponent(LS.get('topic')) + (ntfyTok() ? '#k=' + encodeURIComponent(ntfyTok()) : ''); }
 function drawQR() {
   for (const id of ['qr', 'bigqr']) { $(id).innerHTML = ''; if (window.QRCode) new QRCode($(id), { text: guestUrl(), width: id === 'qr' ? 180 : 420, height: id === 'qr' ? 180 : 420 }); }
 }
@@ -685,7 +689,7 @@ function renderReqs() {
 
 // ---------- fjernkontroll via ntfy ----------
 if (!LS.get('ctl', null)) LS.set('ctl', 'djctl-' + rand(20));
-function remoteUrl() { return new URL('remote.html', location.href).href.split('?')[0].split('#')[0] + '#c=' + encodeURIComponent(LS.get('ctl')); }
+function remoteUrl() { return new URL('remote.html', location.href).href.split('?')[0].split('#')[0] + '#c=' + encodeURIComponent(LS.get('ctl')) + (ntfyTok() ? '&k=' + encodeURIComponent(ntfyTok()) : ''); }
 function drawRemoteQR() { $('rqr').innerHTML = ''; if (window.QRCode) new QRCode($('rqr'), { text: remoteUrl(), width: 160, height: 160 }); }
 var ctlEs = null, pushT = null, lastPush = 0;
 function statusObj() {
@@ -702,12 +706,12 @@ var lastRemote = 0, ntfyBlockedUntil = 0, ntfyWarned = false;
 async function ntfyPost(topic, body) {
   if (Date.now() < ntfyBlockedUntil) return false;
   try {
-    const r = await fetch('https://ntfy.sh/' + encodeURIComponent(topic), { method: 'POST', body });
+    const r = await fetch('https://ntfy.sh/' + encodeURIComponent(topic), { method: 'POST', body, headers: ntfyAuth() });
     if (r.status === 429) {
       let reset = Date.now() + 15 * 60000;
-      try { const a = await (await fetch('https://ntfy.sh/v1/account')).json(); if (a?.stats?.messages_remaining === 0 && a.stats.reset_at) reset = a.stats.reset_at * 1000; } catch {}
+      try { const a = await (await fetch('https://ntfy.sh/v1/account', { headers: ntfyAuth() })).json(); if (a?.stats?.messages_remaining === 0 && a.stats.reset_at) reset = a.stats.reset_at * 1000; } catch {}
       ntfyBlockedUntil = reset;
-      if (!ntfyWarned) { ntfyWarned = true; log('⚠ ntfy-kvoten for denne internettforbindelsen er brukt opp (250 meldinger per døgn). Fjernkontroll-status og spilleliste til gjestene stopper til ca. kl. ' + new Date(reset).toTimeString().slice(0, 5) + '. Ønsker og kommandoer fra mobiler på annet nett virker fortsatt. Tips: koble laptopen til mobil-hotspot.'); }
+      if (!ntfyWarned) { ntfyWarned = true; log('⚠ ntfy-kvoten for denne internettforbindelsen er brukt opp (' + (ntfyTok() ? 'kontoens døgnkvote' : '250 meldinger per døgn') + '). Fjernkontroll-status og spilleliste til gjestene stopper til ca. kl. ' + new Date(reset).toTimeString().slice(0, 5) + '. Ønsker og kommandoer fra mobiler på annet nett virker fortsatt. Tips: koble laptopen til mobil-hotspot.'); }
       return false;
     }
     return r.ok;
@@ -949,11 +953,12 @@ $('sayBtn').onclick = () => { const t = $('say').value.trim(); if (t) { onAir(t)
 $('testVoice').onclick = () => say($('lang').value === 'en' ? `Hey hey! This is ${$('djname').value}, and I am ready to party!` : $('lang').value === 'mix' ? `Hei hei, party people! Dette er ${$('djname').value}, og jeg er klar. Let's go!` : `Hei hei! Dette er ${$('djname').value}, og jeg er klar for festen!`);
 $('bigBtn').onclick = () => { $('big').style.display = 'flex'; };
 $('big').onclick = () => { $('big').style.display = 'none'; };
-$('copyUrl').onclick = async () => { try { await navigator.clipboard.writeText(guestUrl()); log('Lenke kopiert: ' + guestUrl()); } catch { log(guestUrl()); } };
+$('copyUrl').onclick = async () => { try { await navigator.clipboard.writeText(guestUrl()); log('Lenke kopiert: ' + guestUrl().split('#')[0]); } catch { log(guestUrl()); } };
 
 handleCallback().then(() => { if (LS.get('tok', null)) findDevices(); });
+$('ntfytok').addEventListener('change', () => { ntfyBlockedUntil = 0; ntfyWarned = false; drawQR(); drawRemoteQR(); log(ntfyTok() ? '🔑 ntfy-nøkkel satt. Skriv ut/vis QR-kodene på nytt.' : 'ntfy-nøkkel fjernet'); });
 drawQR(); listen(); renderReqs(); drawRemoteQR(); listenCtl(); showVol(); renderPlan(); pushStatus(); pushGuestList(false);
-log('Klar. Gjesteside: ' + guestUrl());
+log('Klar. Gjesteside: ' + guestUrl().split('#')[0]);
 }
 </script>
 </body>
