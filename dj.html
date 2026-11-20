@@ -473,11 +473,13 @@ Aldri frekk, seksuell, politisk eller nedlatende. Ingen emojier, anførselstegn,
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST', signal: ctl.signal,
       headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json', 'anthropic-dangerous-direct-browser-access': 'true' },
-      body: JSON.stringify({ model: $('model').value.trim() || 'claude-sonnet-5-5', max_tokens: 200, temperature: 1, system: sys, messages: [{ role: 'user', content: u }] })
+      body: JSON.stringify({ model: $('model').value.trim() || 'claude-sonnet-5-5', max_tokens: 1024, temperature: 1, system: sys, messages: [{ role: 'user', content: u }] })
     });
     const j = await r.json();
     if (!r.ok) throw new Error(j.error?.message || r.status);
-    return j.content?.[0]?.text?.trim() || null;
+    const text = (j.content || []).filter(c => c.type === 'text').map(c => c.text).join(' ').trim();
+    if (!text) throw new Error('tomt svar (stop_reason: ' + (j.stop_reason || '?') + ')');
+    return text;
   } catch (e) { log('⚠ Claude: ' + (e.name === 'AbortError' ? 'brukte for lang tid' : e.message) + (ask ? '' : ' (bruker mal)')); return null; }
   finally { clearTimeout(to); }
 }
