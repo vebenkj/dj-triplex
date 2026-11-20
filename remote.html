@@ -106,7 +106,8 @@ if (!ctl) { document.body.innerHTML = '<p style="padding:20px">Denne lenken mang
 else {
   async function send(cmd, quiet) {
     try {
-      const r = await fetch('https://ntfy.sh/' + encodeURIComponent(ctl), { method: 'POST', body: JSON.stringify(cmd), headers: ntfyK ? { Authorization: 'Bearer ' + ntfyK } : {} });
+      let r = await fetch('https://ntfy.sh/' + encodeURIComponent(ctl), { method: 'POST', body: JSON.stringify(cmd), headers: ntfyK ? { Authorization: 'Bearer ' + ntfyK } : {} });
+      if (ntfyK && (r.status === 401 || r.status === 403)) r = await fetch('https://ntfy.sh/' + encodeURIComponent(ctl), { method: 'POST', body: JSON.stringify(cmd) });
       if (r.status === 429) throw new Error('kvoten for dette nettet er brukt opp – prøv mobildata i stedet for wifi');
       if (!r.ok) throw new Error(r.status);
       if (!quiet) toast('Sendt ✓');
