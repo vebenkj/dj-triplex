@@ -14,6 +14,8 @@ header h1{margin:0;font-size:22px}
 #onair{padding:4px 10px;border-radius:6px;background:#333;font-weight:700;font-size:13px}
 #onair.live{background:var(--red)}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;padding:16px 20px}
+.wide{grid-column:1/-1}
+#crate{min-height:420px;font-size:16px;line-height:1.6;padding:12px 14px;columns:auto}
 .p{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}
 .p h2{margin:0 0 10px;font-size:15px;color:var(--gold)}
 label{display:block;font-size:13px;color:var(--dim);margin:10px 0 4px}
@@ -35,7 +37,7 @@ button.red{background:var(--red);border-color:var(--red)}
 .req small{color:var(--dim);display:block}
 .tag{font-size:11px;padding:2px 7px;border-radius:5px;background:#333;white-space:nowrap}
 .tag.venter{background:var(--gold);color:#000}.tag.klar{background:var(--green);color:#000}.tag.avvist{background:#555}
-#log{height:180px;overflow:auto;font:12.5px ui-monospace,Consolas,monospace;color:var(--dim);white-space:pre-wrap}
+#log{height:220px;overflow:auto;font:12.5px ui-monospace,Consolas,monospace;color:var(--dim);white-space:pre-wrap}
 #qr,#rqr{background:#fff;padding:10px;border-radius:10px;display:inline-block}
 summary.h2{list-style:none;cursor:pointer;font-weight:700;color:var(--gold);font-size:15px}
 summary.h2::-webkit-details-marker{display:none}
@@ -87,12 +89,14 @@ details summary{cursor:pointer;color:var(--gold);font-weight:600}
     <div class="row"><button id="bigBtn">📺 Vis QR i fullskjerm</button><button id="copyUrl">Kopier lenke</button></div>
     <label><input type="checkbox" id="approve" style="width:auto"> Godkjenn ønsker før de spilles</label>
     <div id="reqs"><p style="color:var(--dim)">Ingen ønsker ennå.</p></div>
+    <h2 style="margin-top:16px">Logg</h2>
+    <div id="log"></div>
   </section>
 
-  <section class="p">
+  <section class="p wide">
     <h2>Spillekista</h2>
     <label for="crate">Format: <code>rolig</code>, <code>fest</code> eller <code>begge</code> | Artist - Låt</label>
-    <textarea id="crate" style="min-height:260px"></textarea>
+    <textarea id="crate"></textarea>
   </section>
 
   <section class="p"><details id="setup"><summary class="h2">Oppsett</summary>
@@ -129,10 +133,6 @@ details summary{cursor:pointer;color:var(--gold);font-weight:600}
   </details></section>
 
 
-  <section class="p">
-    <h2>Logg</h2>
-    <div id="log"></div>
-  </section>
 </div>
 
 <div id="big"><h2>Ønsk deg en låt!</h2><div id="bigqr"></div><div id="bignow"></div></div>
