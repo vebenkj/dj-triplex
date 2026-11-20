@@ -16,11 +16,21 @@ header h1{margin:0;font-size:22px}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;padding:16px 20px}
 .wide{grid-column:1/-1}
 #crate{min-height:420px;font-size:16px;line-height:1.6;padding:12px 14px}
+#plan{font-size:17px;line-height:1.45;max-height:calc(100vh - 210px);overflow:auto}
+#plan .it{display:flex;align-items:center;gap:10px;padding:7px 8px;border-bottom:1px solid var(--line);border-radius:6px}
+#plan .it .t{flex:1}
+#plan .it .mk{width:26px;text-align:center}
+#plan .it button{padding:4px 10px;font-size:13px;opacity:.55}
+#plan .it:hover button{opacity:1}
+#plan .done{color:var(--dim);text-decoration:line-through;opacity:.6}
+#plan .now{background:var(--gold);color:#000;font-weight:700}
+#plan .next{outline:2px solid var(--gold)}
+#plan .head{color:var(--gold);font-weight:700;padding:8px 8px 4px;font-size:14px}
 @media (min-width:1100px){
+  #crate{min-height:calc(100vh - 210px)}
   .grid{grid-template-columns:minmax(300px,1fr) minmax(300px,1fr) minmax(380px,1.5fr);align-items:start}
   .wide{grid-column:3;grid-row:1/span 2}
   #setupSec{grid-column:1/span 2}
-  #crate{min-height:calc(100vh - 170px)}
 }
 .p{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}
 .p h2{margin:0 0 10px;font-size:15px;color:var(--gold)}
@@ -100,9 +110,13 @@ details summary{cursor:pointer;color:var(--gold);font-weight:600}
   </section>
 
   <section class="p wide">
-    <h2>Spillekista</h2>
-    <label for="crate">Format: <code>rolig</code>, <code>fest</code> eller <code>begge</code> | Artist - Låt</label>
-    <textarea id="crate"></textarea>
+    <h2>Spillelista <span id="planMode" style="color:var(--dim);font-weight:400"></span></h2>
+    <div class="row"><button id="editCrate" style="flex:0 0 auto">✏️ Rediger lista</button><label style="margin:0;flex:1"><input type="checkbox" id="shuffle" style="width:auto"> Tilfeldig rekkefølge</label></div>
+    <div id="plan"></div>
+    <div id="crateBox" style="display:none">
+      <label for="crate">Format: <code>rolig</code>, <code>fest</code> eller <code>begge</code> | Artist - Låt. Lista spilles ovenfra og ned.</label>
+      <textarea id="crate"></textarea>
+    </div>
   </section>
 
   <section class="p" id="setupSec"><details id="setup"><summary class="h2">Oppsett</summary>
@@ -216,7 +230,7 @@ let nextUp = null;          // {uri, name, artist, request}
 let songCount = 0, lastVol = 70, devSupportsVol = true;
 const played = new Set();
 const playHist = [];
-var musicPlaying = null;
+var musicPlaying = null, nowQ = null, nowReq = null; const doneQ = new Set();
 const requests = [];        // {id, song, name, note, status}
 const recentLines = [];
 let timer = null, es = null;
@@ -234,6 +248,7 @@ const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 
 // ---------- persisted settings ----------
 const fields = ['cid', 'key', 'elkey', 'elmodel', 'model', 'djname', 'event', 'about', 'black', 'duck', 'every', 'crate'];
+{ const sh = LS.get('shuffle', null); if (sh !== null) $('shuffle').checked = sh; $('shuffle').addEventListener('change', () => LS.set('shuffle', $('shuffle').checked)); }
 LS.set('topic', LS.get('topic', null) || 'julebord-' + rand(12));
 // Nøkler kan også gis i adressen: dj.html#key=…&elkey=…&elvoice=… (lagres lokalt, fjernes så fra adresselinja)
 { const h = new URLSearchParams(location.hash.slice(1)); let got = false;
@@ -250,7 +265,7 @@ $('topic').addEventListener('change', () => { LS.set('topic', $('topic').value.t
 $('approve').checked = LS.get('approve', false);
 $('approve').addEventListener('change', () => LS.set('approve', $('approve').checked));
 
-function setMode(m) { if (m !== 'rolig' && m !== 'fest') return; mode = m; LS.set('mode', m); document.querySelectorAll('#mode button').forEach(b => b.classList.toggle('on', b.dataset.m === m)); pushStatus(); }
+function setMode(m) { if (m !== 'rolig' && m !== 'fest') return; mode = m; LS.set('mode', m); document.querySelectorAll('#mode button').forEach(b => b.classList.toggle('on', b.dataset.m === m)); pushStatus(); if (window.renderPlan) renderPlan(); }
 document.querySelectorAll('#mode button').forEach(b => b.onclick = () => { setMode(b.dataset.m); log('Stemning: ' + b.dataset.m); });
 setMode(mode);
 
@@ -527,10 +542,10 @@ async function chooseNext() {
   let pool = crate().filter(c => (c.tag === mode || c.tag === 'begge') && !played.has(c.q));
   if (!pool.length) { played.clear(); pool = crate().filter(c => c.tag === mode || c.tag === 'begge'); }
   for (let i = 0; i < 4 && pool.length; i++) {
-    const c = pool.splice(Math.floor(Math.random() * pool.length), 1)[0];
+    const c = pool.splice($('shuffle').checked ? Math.floor(Math.random() * pool.length) : 0, 1)[0];
     played.add(c.q);
     const tr = await resolve(c.q).catch(() => null);
-    if (tr) return { ...tr, request: null };
+    if (tr) return { ...tr, request: null, q: c.q };
     log('Fant ikke: ' + c.q);
   }
   return null;
@@ -539,7 +554,7 @@ async function queueNext() {
   const n = await chooseNext(); if (!n) return log('⚠ Fant ingen låt å legge i kø');
   await sp('POST', '/me/player/queue?' + new URLSearchParams({ uri: n.uri, ...($('dev').value ? { device_id: $('dev').value } : {}) }));
   nextUp = n; $('nx').textContent = 'Neste: ' + n.name + ' – ' + n.artist + (n.request ? ' (ønske)' : '');
-  pushStatus();
+  renderPlan(); pushStatus();
 }
 
 // ---------- main loop ----------
@@ -557,10 +572,13 @@ async function tick() {
     if (musicPlaying !== st.is_playing) { musicPlaying = st.is_playing; $('musicBtn').textContent = musicPlaying ? '⏯ Pause musikken' : '▶ Spill musikken'; pushStatus(); }
     if (it.id !== cur.id) {
       const track = { name: it.name, artist: $('na').textContent };
-      const req = nextUp && (nextUp.uri === it.uri || nextUp.name === it.name) ? nextUp.request : null;
+      const match = nextUp && (nextUp.uri === it.uri || nextUp.name === it.name);
+      const req = match ? nextUp.request : null;
+      if (nowQ) doneQ.add(nowQ);
+      nowQ = match ? (nextUp.q || null) : null; nowReq = req ? (req.song + (req.name ? ' (ønske fra ' + req.name + ')' : ' (ønske)')) : null;
       if (req) { req.status = 'spilt'; renderReqs(); }
       const first = cur.id === null;
-      cur = { id: it.id, queued: false }; nextUp = null; $('nx').textContent = 'Neste: –';
+      cur = { id: it.id, queued: false }; nextUp = null; $('nx').textContent = 'Neste: –'; renderPlan();
       songCount++;
       playHist.unshift(track.name + ' – ' + track.artist); playHist.length = Math.min(playHist.length, 8);
       pushStatus();
@@ -579,6 +597,7 @@ async function start() {
     const dev = $('dev').value;
     if (!dev) { await findDevices(); if (!$('dev').value) return log('⚠ Velg en enhet først'); }
     const first = await chooseNext(); if (!first) return log('⚠ Spillekista er tom');
+    nextUp = first; renderPlan();
     const st = await sp('GET', '/me/player').catch(() => null);
     if (st?.device?.volume_percent != null) lastVol = st.device.volume_percent;
     running = true;
@@ -646,6 +665,7 @@ function statusObj() {
   const crateList = crate().filter(c => c.tag === mode || c.tag === 'begge').map(c => c.q);
   const o = { t: Date.now(), running, paused, talking, music: musicPlaying, vol: devSupportsVol ? lastVol : null, src: lastSrc, mode, np: $('np').textContent, na: $('na').textContent, nx: $('nx').textContent.replace(/^Neste: /, ''),
     hist: playHist.slice(0, 6), reqs: requests.slice(0, 6).map(r => ({ s: r.song, n: r.name, st: r.status })), list: [] };
+  o.nowQ = nowQ; o.nextQ = nextUp ? (nextUp.q || null) : null; o.nowReq = nowReq; o.nextReq = nextUp && nextUp.request ? nextUp.request.song : null; o.done = crateList.map((q, i) => doneQ.has(q) ? i : -1).filter(i => i >= 0);
   for (const q of crateList) { o.list.push(q); if (JSON.stringify(o).length > 3600) { o.list.pop(); o.more = crateList.length - o.list.length; break; } }
   return o;
 }
@@ -706,6 +726,43 @@ $('newRemote').onclick = () => { LS.set('ctl', 'djctl-' + rand(20)); drawRemoteQ
 $('login').onclick = login;
 $('devBtn').onclick = findDevices;
 $('start').onclick = start;
+function renderPlan() {
+  const box = $('plan'); if (!box) return;
+  $('planMode').textContent = mode === 'fest' ? '· fest' : '· middag';
+  const list = crate().filter(c => c.tag === mode || c.tag === 'begge');
+  box.innerHTML = '';
+  const row = (text, cls, mk, q) => {
+    const el = document.createElement('div'); el.className = 'it ' + cls;
+    const m = document.createElement('span'); m.className = 'mk'; m.textContent = mk;
+    const t = document.createElement('span'); t.className = 't'; t.textContent = text.replace(/ - /, ' – ');
+    el.append(m, t);
+    if (q && cls !== 'now') { const b = document.createElement('button'); b.textContent = '▶ Spill nå'; b.title = 'Spill denne med en gang'; b.onclick = () => playNow(q); el.appendChild(b); }
+    box.appendChild(el); return el;
+  };
+  if (nowReq) row(nowReq, 'now', '▶');
+  if (nextUp && nextUp.request) row(nextUp.request.song + ' (ønske)', 'next', '⏭');
+  let nowEl = null;
+  for (const c of list) {
+    const isNow = c.q === nowQ, isNext = nextUp && nextUp.q === c.q;
+    const el = row(c.q, isNow ? 'now' : isNext ? 'next' : doneQ.has(c.q) ? 'done' : '', isNow ? '▶' : isNext ? '⏭' : doneQ.has(c.q) ? '✓' : '', c.q);
+    if (isNow) nowEl = el;
+  }
+  if (!list.length) box.innerHTML = '<p style="color:var(--dim)">Lista er tom for denne stemningen. Trykk «Rediger lista».</p>';
+  if (nowEl) nowEl.scrollIntoView({ block: 'nearest' });
+}
+async function playNow(q) {
+  try {
+    const tr = await resolve(q); if (!tr) return log('⚠ Fant ikke: ' + q);
+    played.add(q);
+    const dev = $('dev').value ? '?device_id=' + encodeURIComponent($('dev').value) : '';
+    nextUp = { ...tr, request: null, q };
+    await sp('PUT', '/me/player/play' + dev, { uris: [tr.uri] });
+    log('▶ Spiller nå: ' + tr.name + ' – ' + tr.artist);
+    if (running && !paused) setTimeout(tick, 800);
+  } catch (e) { log('⚠ Spill nå: ' + e.message); }
+}
+$('editCrate').onclick = () => { const open = $('crateBox').style.display === 'none'; $('crateBox').style.display = open ? '' : 'none'; $('plan').style.display = open ? 'none' : ''; $('editCrate').textContent = open ? '✓ Ferdig' : '✏️ Rediger lista'; if (!open) renderPlan(); };
+$('crate').addEventListener('input', () => renderPlan());
 async function askDj(text) {
   text = String(text || '').trim().slice(0, 300); if (!text) return;
   log('✨ Bestilling: ' + text);
@@ -747,7 +804,7 @@ $('skip').onclick = async () => {
     else {
       const n = nextUp || await chooseNext(); if (!n) return log('⚠ Fant ingen låt å hoppe til');
       await sp('PUT', '/me/player/play' + dev, { uris: [n.uri] });
-      nextUp = n; log('⏭ Hopper til ' + n.name);
+      nextUp = n; renderPlan(); log('⏭ Hopper til ' + n.name);
     }
     if (running && !paused) setTimeout(tick, 800);
   } catch (e) { log('⚠ Hopp over: ' + e.message); }
@@ -760,7 +817,7 @@ $('big').onclick = () => { $('big').style.display = 'none'; };
 $('copyUrl').onclick = async () => { try { await navigator.clipboard.writeText(guestUrl()); log('Lenke kopiert: ' + guestUrl()); } catch { log(guestUrl()); } };
 
 handleCallback().then(() => { if (LS.get('tok', null)) findDevices(); });
-drawQR(); listen(); renderReqs(); drawRemoteQR(); listenCtl(); showVol(); pushStatus(); pushGuestList(true);
+drawQR(); listen(); renderReqs(); drawRemoteQR(); listenCtl(); showVol(); renderPlan(); pushStatus(); pushGuestList(true);
 log('Klar. Gjesteside: ' + guestUrl());
 }
 </script>

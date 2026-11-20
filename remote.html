@@ -28,6 +28,10 @@ input{width:100%;background:#0d0809;color:var(--ink);border:1px solid var(--line
 .small{font-size:13px;color:var(--dim)}
 ul{margin:0;padding-left:18px}
 li{margin:3px 0}
+li.now{color:var(--gold);font-weight:700}
+li.next{color:var(--ink);font-weight:600}
+li.done{color:var(--dim);text-decoration:line-through;opacity:.6}
+#list{list-style:none;padding-left:0}
 .tag{font-size:11px;padding:1px 6px;border-radius:5px;background:#444;margin-left:6px}
 #toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#000c;padding:10px 16px;border-radius:10px;display:none}
 </style>
@@ -132,7 +136,10 @@ else {
     fill('reqs', (st.reqs || []).map(r => li(r.s + (r.n ? ' (fra ' + r.n + ')' : ''), r.st)), 'Ingen ønsker ennå.');
     fill('hist', (st.hist || []).map(h => li(h)), '–');
     $('lm').textContent = st.mode === 'fest' ? 'fest' : 'middag';
-    const list = (st.list || []).map(q => li(q));
+    const done = new Set(st.done || []);
+    const list = (st.list || []).map((q, i) => { const isNow = q === st.nowQ, isNext = q === st.nextQ; const el = li((isNow ? '▶ ' : isNext ? '⏭ ' : done.has(i) ? '✓ ' : '· ') + q.replace(/ - /, ' – ')); el.className = isNow ? 'now' : isNext ? 'next' : done.has(i) ? 'done' : ''; return el; });
+    if (st.nextReq) { const e2 = li('⏭ ' + st.nextReq + ' (ønske)'); e2.className = 'next'; list.unshift(e2); }
+    if (st.nowReq) { const e1 = li('▶ ' + st.nowReq); e1.className = 'now'; list.unshift(e1); }
     if (st.more) { const m = li('… og ' + st.more + ' til'); m.className = 'small'; list.push(m); }
     fill('list', list, 'Tom spilleliste.');
   }
