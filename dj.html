@@ -15,7 +15,13 @@ header h1{margin:0;font-size:22px}
 #onair.live{background:var(--red)}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;padding:16px 20px}
 .wide{grid-column:1/-1}
-#crate{min-height:420px;font-size:16px;line-height:1.6;padding:12px 14px;columns:auto}
+#crate{min-height:420px;font-size:16px;line-height:1.6;padding:12px 14px}
+@media (min-width:1100px){
+  .grid{grid-template-columns:minmax(300px,1fr) minmax(300px,1fr) minmax(380px,1.5fr);align-items:start}
+  .wide{grid-column:3;grid-row:1/span 2}
+  #setupSec{grid-column:1/span 2}
+  #crate{min-height:calc(100vh - 170px)}
+}
 .p{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}
 .p h2{margin:0 0 10px;font-size:15px;color:var(--gold)}
 label{display:block;font-size:13px;color:var(--dim);margin:10px 0 4px}
@@ -99,7 +105,7 @@ details summary{cursor:pointer;color:var(--gold);font-weight:600}
     <textarea id="crate"></textarea>
   </section>
 
-  <section class="p"><details id="setup"><summary class="h2">Oppsett</summary>
+  <section class="p" id="setupSec"><details id="setup"><summary class="h2">Oppsett</summary>
     <label for="cid">Spotify Client ID</label>
     <input id="cid" value="43791d06e25e45a889936c92ecde0a72" placeholder="fra developer.spotify.com">
     <div class="row"><button id="login">Logg inn på Spotify</button><button id="devBtn">Finn enheter</button></div>
