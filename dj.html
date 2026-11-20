@@ -95,8 +95,12 @@ details summary{cursor:pointer;color:var(--gold);font-weight:600}
     <div class="row"><input id="say" placeholder="Desserten er servert! Kom og forsyn dere."><button id="sayBtn" style="flex:0 0 auto">🎙 Si det</button></div>
     <label for="ask">Be DJ-en om noe (Claude lager replikken)</label>
     <div class="row"><input id="ask" placeholder="Si at buffeten er påfylt, og utfordre lageret til dansekonkurranse"><button id="askBtn" style="flex:0 0 auto">✨ Lag og si</button></div>
-    <label for="volR">Spotify-volum: <span id="volV">–</span></label>
+    <label for="masterR">🎚 Master (styrer begge): <span id="masterV">–</span></label>
+    <div class="row"><button id="masterDn" style="flex:0 0 auto">−</button><input id="masterR" type="range" min="0" max="100" step="5" style="flex:1"><button id="masterUp" style="flex:0 0 auto">+</button></div>
+    <label for="volR">🎵 Musikk (Spotify): <span id="volV">–</span></label>
     <div class="row"><button id="volDn" style="flex:0 0 auto">−</button><input id="volR" type="range" min="0" max="100" step="5" style="flex:1"><button id="volUp" style="flex:0 0 auto">+</button></div>
+    <label for="voiceR">🎙 DJ-stemme: <span id="voiceV">–</span></label>
+    <div class="row"><button id="voiceDn" style="flex:0 0 auto">−</button><input id="voiceR" type="range" min="0" max="100" step="5" style="flex:1"><button id="voiceUp" style="flex:0 0 auto">+</button></div>
   </section>
 
   <section class="p">
@@ -241,6 +245,9 @@ let mode = LS.get('mode', 'rolig');
 let cur = { id: null, queued: false };
 let nextUp = null;          // {uri, name, artist, request}
 let songCount = 0, lastVol = 70, devSupportsVol = true;
+var musicVol = LS.get('musicVol', null), voiceVol = LS.get('voiceVol', 100), masterVol = LS.get('masterVol', 100);
+const clampV = v => Math.max(0, Math.min(100, Math.round(+v || 0)));
+const voiceGain = () => clampV(voiceVol) * clampV(masterVol) / 10000;
 const played = new Set();
 const playHist = [];
 var musicPlaying = null, nowQ = null, nowReq = null; const doneQ = new Set();
@@ -383,7 +390,7 @@ async function sayEL(text) {
     });
     if (!r.ok) { let m = r.status; try { const j = await r.json(); m = j.detail?.message || j.detail?.status || JSON.stringify(j.detail) || m; } catch {} throw new Error(m); }
     const url = URL.createObjectURL(await r.blob());
-    await new Promise((res, rej) => { elAudio.src = url; elAudio.onended = res; elAudio.onerror = () => rej(new Error('avspilling feilet')); elAudio.play().catch(rej); });
+    await new Promise((res, rej) => { elAudio.src = url; elAudio.volume = voiceGain(); elAudio.onended = res; elAudio.onerror = () => rej(new Error('avspilling feilet')); elAudio.play().catch(rej); });
     URL.revokeObjectURL(url);
     return true;
   } catch (e) { log('⚠ ElevenLabs: ' + e.message + ' (bruker Edge-stemmen)'); return false; }
@@ -399,7 +406,7 @@ function sayBrowser(text) {
     const u = new SpeechSynthesisUtterance(text);
     const v = speechSynthesis.getVoices().find(v => v.name === $('voice').value);
     if (v) { u.voice = v; u.lang = v.lang; } else u.lang = 'nb-NO';
-    u.rate = 1.08; u.pitch = 1.05;
+    u.rate = 1.08; u.pitch = 1.05; u.volume = voiceGain();
     const safety = setTimeout(res, 4000 + text.length * 110);
     u.onend = u.onerror = () => { clearTimeout(safety); res(); };
     speechSynthesis.cancel(); speechSynthesis.speak(u);
@@ -582,7 +589,7 @@ async function tick() {
   try {
     const st = await sp('GET', '/me/player');
     if (!st || !st.item) { status('Ingen avspilling: sjekk Spotify-appen'); return; }
-    if (st.device) { devSupportsVol = st.device.supports_volume !== false; if (!talking && st.device.volume_percent != null && st.device.volume_percent !== lastVol) { lastVol = st.device.volume_percent; showVol(); pushStatus(); } }
+    if (st.device) { devSupportsVol = st.device.supports_volume !== false; if (!talking && st.device.volume_percent != null && st.device.volume_percent !== lastVol) { lastVol = st.device.volume_percent; if (masterVol > 0) { musicVol = clampV(lastVol * 100 / masterVol); LS.set('musicVol', musicVol); } showVol(); pushStatus(); } }
     const it = st.item, rem = it.duration_ms - st.progress_ms;
     $('np').textContent = it.name; $('na').textContent = it.artists.map(a => a.name).join(', ');
     $('nb').style.width = (100 * st.progress_ms / it.duration_ms) + '%';
@@ -618,7 +625,8 @@ async function start() {
     const first = await chooseNext(); if (!first) return log('⚠ Spillekista er tom');
     nextUp = first; renderPlan();
     const st = await sp('GET', '/me/player').catch(() => null);
-    if (st?.device?.volume_percent != null) lastVol = st.device.volume_percent;
+    if (musicVol == null && st?.device?.volume_percent != null) { musicVol = clampV(st.device.volume_percent * 100 / (masterVol || 100)); LS.set('musicVol', musicVol); }
+    lastVol = clampV((musicVol ?? 70) * masterVol / 100); await setVol(lastVol); showVol();
     running = true;
     await say(`God kveld, alle sammen, og velkommen til ${$('event').value}! Her er ${$('djname').value}, og musikken starter nå. Skann QR-koden hvis du vil ønske deg en låt!`);
     await sp('PUT', '/me/player/play?device_id=' + encodeURIComponent($('dev').value), { uris: [first.uri] });
@@ -682,7 +690,7 @@ function drawRemoteQR() { $('rqr').innerHTML = ''; if (window.QRCode) new QRCode
 var ctlEs = null, pushT = null, lastPush = 0;
 function statusObj() {
   const crateList = crate().filter(c => c.tag === mode || c.tag === 'begge').map(c => c.q);
-  const o = { t: Date.now(), running, paused, talking, music: musicPlaying, vol: devSupportsVol ? lastVol : null, src: lastSrc, mode, np: $('np').textContent, na: $('na').textContent, nx: $('nx').textContent.replace(/^Neste: /, ''),
+  const o = { t: Date.now(), running, paused, talking, music: musicPlaying, vol: devSupportsVol ? (musicVol ?? lastVol) : null, voiceVol, masterVol, src: lastSrc, mode, np: $('np').textContent, na: $('na').textContent, nx: $('nx').textContent.replace(/^Neste: /, ''),
     hist: playHist.slice(0, 6), reqs: requests.slice(0, 6).map(r => ({ s: r.song, n: r.name, st: r.status })), list: [] };
   o.nowQ = nowQ; o.nextQ = nextUp ? (nextUp.q || null) : null; o.nowReq = nowReq; o.nextReq = nextUp && nextUp.request ? nextUp.request.song : null; o.done = crateList.map((q, i) => doneQ.has(q) ? i : -1).filter(i => i >= 0);
   for (const q of crateList) { o.list.push(q); if (JSON.stringify(o).length > 3600) { o.list.pop(); o.more = crateList.length - o.list.length; break; } }
@@ -720,7 +728,9 @@ async function handleCmd(c) {
   else if (c.cmd === 'skip') $('skip').onclick();
   else if (c.cmd === 'music') await setMusic(c.play);
   else if (c.cmd === 'ask' && c.text) askDj(c.text);
-  else if (c.cmd === 'vol') await setNormalVol(c.v != null ? +c.v : lastVol + (+c.d || 0));
+  else if (c.cmd === 'vol') await setNormalVol(c.v != null ? +c.v : (musicVol ?? lastVol) + (+c.d || 0));
+  else if (c.cmd === 'voice') setVoiceVol(c.v != null ? +c.v : voiceVol + (+c.d || 0));
+  else if (c.cmd === 'master') await setMaster(c.v != null ? +c.v : masterVol + (+c.d || 0));
   else if (c.cmd === 'mode') setMode(c.m);
   else if (c.cmd === 'say' && c.text) onAir(String(c.text).slice(0, 300));
   else if (c.cmd === 'ping') pushStatus();
@@ -857,17 +867,42 @@ async function askDj(text) {
 }
 $('askBtn').onclick = () => { const t = $('ask').value.trim(); if (t) { $('ask').value = ''; askDj(t); } };
 $('ask').addEventListener('keydown', e => { if (e.key === 'Enter') $('askBtn').click(); });
-function showVol() { $('volV').textContent = devSupportsVol ? lastVol + ' %' : 'ikke støttet på denne enheten'; $('volR').value = lastVol; }
+function showVol() {
+  const mv = musicVol ?? lastVol;
+  $('volV').textContent = devSupportsVol ? mv + ' %' + (masterVol < 100 ? ' (faktisk ' + lastVol + ' %)' : '') : 'ikke støttet på denne enheten';
+  $('volR').value = mv; $('voiceR').value = voiceVol; $('voiceV').textContent = voiceVol + ' %' + (masterVol < 100 ? ' (faktisk ' + Math.round(voiceGain() * 100) + ' %)' : '');
+  $('masterR').value = masterVol; $('masterV').textContent = masterVol + ' %';
+}
+async function applyMusic() {
+  lastVol = clampV((musicVol ?? lastVol) * masterVol / 100); showVol();
+  if (!talking && devSupportsVol) await setVol(lastVol);
+  pushStatus();
+}
 async function setNormalVol(v) {
-  v = Math.max(0, Math.min(100, Math.round(v)));
   if (!devSupportsVol) { log('⚠ Spotify-enheten tillater ikke volumstyring'); return; }
-  lastVol = v; showVol();
-  if (!talking) await setVol(v);
-  log('🔊 Spotify-volum: ' + v + ' %'); pushStatus();
+  musicVol = clampV(v); LS.set('musicVol', musicVol);
+  await applyMusic(); log('🎵 Musikk: ' + musicVol + ' %');
+}
+function setVoiceVol(v) {
+  voiceVol = clampV(v); LS.set('voiceVol', voiceVol);
+  if (!elAudio.paused) elAudio.volume = voiceGain();
+  showVol(); pushStatus(); log('🎙 DJ-stemme: ' + voiceVol + ' %');
+}
+async function setMaster(v) {
+  if (musicVol == null) { musicVol = clampV(lastVol * 100 / (masterVol || 100)); LS.set('musicVol', musicVol); }
+  masterVol = clampV(v); LS.set('masterVol', masterVol);
+  if (!elAudio.paused) elAudio.volume = voiceGain();
+  await applyMusic(); log('🎚 Master: ' + masterVol + ' %');
 }
 $('volR').addEventListener('change', () => setNormalVol(+$('volR').value));
-$('volDn').onclick = () => setNormalVol(lastVol - 10);
-$('volUp').onclick = () => setNormalVol(lastVol + 10);
+$('volDn').onclick = () => setNormalVol((musicVol ?? lastVol) - 10);
+$('volUp').onclick = () => setNormalVol((musicVol ?? lastVol) + 10);
+$('voiceR').addEventListener('change', () => setVoiceVol(+$('voiceR').value));
+$('voiceDn').onclick = () => setVoiceVol(voiceVol - 10);
+$('voiceUp').onclick = () => setVoiceVol(voiceVol + 10);
+$('masterR').addEventListener('change', () => setMaster(+$('masterR').value));
+$('masterDn').onclick = () => setMaster(masterVol - 10);
+$('masterUp').onclick = () => setMaster(masterVol + 10);
 async function setMusic(play) {
   const dev = $('dev').value ? '?device_id=' + encodeURIComponent($('dev').value) : '';
   try {

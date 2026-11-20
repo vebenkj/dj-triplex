@@ -51,8 +51,12 @@ li.done{color:var(--dim);text-decoration:line-through;opacity:.6}
     <button id="bSkip">⏭ Hopp over</button>
   </div>
   <div class="row"><button id="bMusic">⏯ Pause musikken</button></div>
-  <h2 style="margin-top:14px">Spotify-volum: <span id="volV">–</span></h2>
+  <h2 style="margin-top:14px">🎚 Master: <span id="mV">–</span></h2>
+  <div class="row"><button id="mDn" style="flex:0 0 64px">−</button><input id="mR" type="range" min="0" max="100" step="5" style="flex:1"><button id="mUp" style="flex:0 0 64px">+</button></div>
+  <h2 style="margin-top:10px">🎵 Musikk: <span id="volV">–</span></h2>
   <div class="row"><button id="vDn" style="flex:0 0 64px">−</button><input id="vR" type="range" min="0" max="100" step="5" style="flex:1"><button id="vUp" style="flex:0 0 64px">+</button></div>
+  <h2 style="margin-top:10px">🎙 DJ-stemme: <span id="sV">–</span></h2>
+  <div class="row"><button id="sDn" style="flex:0 0 64px">−</button><input id="sR" type="range" min="0" max="100" step="5" style="flex:1"><button id="sUp" style="flex:0 0 64px">+</button></div>
   <div class="row">
     <button id="mRolig">🍽 Middag</button>
     <button id="mFest">🕺 Fest</button>
@@ -116,6 +120,12 @@ else {
   $('ask').addEventListener('keydown', e => { if (e.key === 'Enter') $('bAsk').click(); });
   $('vDn').onclick = () => send({ cmd: 'vol', d: -10 });
   $('vUp').onclick = () => send({ cmd: 'vol', d: 10 });
+  $('mDn').onclick = () => send({ cmd: 'master', d: -10 });
+  $('mUp').onclick = () => send({ cmd: 'master', d: 10 });
+  $('mR').addEventListener('change', () => { $('mV').textContent = $('mR').value + ' %'; send({ cmd: 'master', v: +$('mR').value }); });
+  $('sDn').onclick = () => send({ cmd: 'voice', d: -10 });
+  $('sUp').onclick = () => send({ cmd: 'voice', d: 10 });
+  $('sR').addEventListener('change', () => { $('sV').textContent = $('sR').value + ' %'; send({ cmd: 'voice', v: +$('sR').value }); });
   $('vR').addEventListener('change', () => { $('volV').textContent = $('vR').value + ' %'; send({ cmd: 'vol', v: +$('vR').value }); });
   $('bSay').onclick = () => { const t = $('say').value.trim(); if (!t) return; send({ cmd: 'say', text: t }); $('say').value = ''; };
   $('say').addEventListener('keydown', e => { if (e.key === 'Enter') $('bSay').click(); });
@@ -131,6 +141,8 @@ else {
     $('air').className = 'pill' + (st.running && !st.paused ? ' live' : '');
     $('bPause').textContent = st.paused ? '▶ Fortsett DJ' : '⏸ Pause DJ';
     if (st.vol == null) { $('volV').textContent = st.running ? 'ikke støttet' : '–'; } else { $('volV').textContent = st.vol + ' %'; if (document.activeElement !== $('vR')) $('vR').value = st.vol; }
+    if (st.masterVol != null) { $('mV').textContent = st.masterVol + ' %'; if (document.activeElement !== $('mR')) $('mR').value = st.masterVol; }
+    if (st.voiceVol != null) { $('sV').textContent = st.voiceVol + ' %'; if (document.activeElement !== $('sR')) $('sR').value = st.voiceVol; }
     $('bMusic').textContent = st.music === false ? '▶ Spill musikken' : '⏯ Pause musikken';
     $('mRolig').className = st.mode === 'rolig' ? 'on' : ''; $('mFest').className = st.mode === 'fest' ? 'on' : '';
     fill('reqs', (st.reqs || []).map(r => li(r.s + (r.n ? ' (fra ' + r.n + ')' : ''), r.st)), 'Ingen ønsker ennå.');
