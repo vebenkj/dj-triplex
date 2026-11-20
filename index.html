@@ -103,6 +103,7 @@ button:disabled{opacity:.6}
     b.disabled = true;
     try {
       const r = await fetch('https://ntfy.sh/' + encodeURIComponent(topic), { method: 'POST', body: JSON.stringify(data) });
+      if (r.status === 429) { show('err', 'Ønskekanalen er full fra dette nettverket akkurat nå. Slå av wifi og prøv igjen med mobildata, eller si ønsket til DJ-en.'); return; }
       if (!r.ok) throw new Error(r.status);
       last = Date.now();
       show('ok', 'Takk! DJ-en har fått ønsket ditt 🎶');

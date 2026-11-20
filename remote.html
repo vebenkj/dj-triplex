@@ -177,7 +177,7 @@ else {
   listen();
   send({ cmd: 'ping' }, true);
   // si fra til konsollen at fjernkontrollen er åpen (konsollen sender bare status da)
-  setInterval(() => { if (document.visibilityState === 'visible') send({ cmd: 'ping' }, true); }, 90000);
+  setInterval(() => { if (document.visibilityState === 'visible') send({ cmd: 'ping' }, true); }, 240000);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') send({ cmd: 'ping' }, true); });
 }
 }

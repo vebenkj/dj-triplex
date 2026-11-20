@@ -697,7 +697,7 @@ function statusObj() {
   return o;
 }
 // ntfy.sh gir 250 meldinger per døgn per IP-adresse. Status sendes derfor bare
-// når en fjernkontroll har vært aktiv de siste 3 minuttene, og maks hvert 10. sekund.
+// når en fjernkontroll har vært aktiv de siste 5 minuttene, og maks hvert 10. sekund.
 var lastRemote = 0, ntfyBlockedUntil = 0, ntfyWarned = false;
 async function ntfyPost(topic, body) {
   if (Date.now() < ntfyBlockedUntil) return false;
@@ -714,7 +714,7 @@ async function ntfyPost(topic, body) {
   } catch { return false; }
 }
 function pushStatus(force) {
-  if (!force && !(Date.now() - (lastRemote || 0) <= 180000)) return; // ingen fjernkontroll åpen
+  if (!force && !(Date.now() - (lastRemote || 0) <= 300000)) return; // ingen fjernkontroll åpen
   clearTimeout(pushT);
   const wait = Math.max(0, 10000 - (Date.now() - lastPush));
   pushT = setTimeout(() => { lastPush = Date.now(); ntfyPost(LS.get('ctl') + '-s', JSON.stringify(statusObj())); }, Math.max(wait, 400));
@@ -736,7 +736,7 @@ function pushGuestList(force) {
 }
 setInterval(() => pushGuestList(true), 6 * 3600 * 1000); // ntfy tar vare på meldinger i 12 timer
 async function handleCmd(c) {
-  const wasIdle = !(Date.now() - (lastRemote || 0) <= 180000); lastRemote = Date.now();
+  const wasIdle = !(Date.now() - (lastRemote || 0) <= 300000); lastRemote = Date.now();
   if (c.cmd === 'ping') { if (wasIdle) log('📱 Fjernkontroll koblet til'); pushStatus(true); return; }
   log('📱 Fjernkontroll: ' + c.cmd + (c.m ? ' ' + c.m : ''));
   if (c.cmd === 'start') { if (!running) await start(); else setPaused(false); }
