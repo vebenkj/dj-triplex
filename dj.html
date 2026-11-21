@@ -488,7 +488,7 @@ function langRule() {
   const l = $('lang') ? $('lang').value : 'no';
   if (l === 'en') return 'SPRÅK: Skriv replikken på engelsk, som en energisk amerikansk/britisk radio-DJ. Publikum er norsk, så hold engelsken enkel og tydelig. Norske navn, steder, firmanavn og låttitler beholdes som de er. Instruksene under er på norsk, men svaret skal være på engelsk.';
   if (l === 'mix') return 'SPRÅK: Skriv på norsk bokmål, men strø inn ett eller to typiske engelske radio-DJ-uttrykk per replikk, for eksempel «Coming up next!», «Put your hands up!», «Let\'s go!», «Party people!» eller «Stay tuned!».';
-  if (l === 'nm') return 'SPRÅK: Skriv på norsk med lett nordmørsk preg, slik de snakker på Averøy/Kristiansund. Bruk «e» for jeg, «de» for deg, «dåkk» for dere, «sjøl», «kå» for hva, «kem» for hvem, «ikkje», «heile», «te» for til. Si «det her e» i stedet for «dette er», og «e» for er. IKKE bruk «æ», «dæ» eller «dette er». Ikke overdriv: to–tre dialektord per replikk, resten lett forståelig.';
+  if (l === 'nm') return 'SPRÅK: Skriv på norsk med lett nordmørsk preg, slik de snakker på Averøy/Kristiansund. Bruk «e» for jeg, «de» for deg, «dåkk» for dere, «sjøl», «kå» for hva, «kem» for hvem, «ikkje», «heile», «te» for til. Si «ta her e» i stedet for «dette er» (og «ta her» for «dette»), og «e» for er. IKKE bruk «æ», «dæ» eller «dette er». Ikke overdriv: to–tre dialektord per replikk, resten lett forståelig.';
   return 'SPRÅK: Skriv på norsk bokmål.';
 }
 async function claudeLine(track, req, ask) {
@@ -952,7 +952,7 @@ $('skip').onclick = async () => {
   finally { btn.disabled = false; }
 };
 $('sayBtn').onclick = () => { const t = $('say').value.trim(); if (t) { onAir(t); $('say').value = ''; } };
-$('testVoice').onclick = () => say($('lang').value === 'en' ? `Hey hey! This is ${$('djname').value}, and I am ready to party!` : $('lang').value === 'mix' ? `Hei hei, party people! Dette er ${$('djname').value}, og jeg er klar. Let's go!` : $('lang').value === 'nm' ? `Hei hei! Det her e ${$('djname').value}, og e e klar for fest. Kom dåkk ut på golvet!` : `Hei hei! Dette er ${$('djname').value}, og jeg er klar for festen!`);
+$('testVoice').onclick = () => say($('lang').value === 'en' ? `Hey hey! This is ${$('djname').value}, and I am ready to party!` : $('lang').value === 'mix' ? `Hei hei, party people! Dette er ${$('djname').value}, og jeg er klar. Let's go!` : $('lang').value === 'nm' ? `Hei hei! Ta her e ${$('djname').value}, og e e klar for fest. Kom dåkk ut på golvet!` : `Hei hei! Dette er ${$('djname').value}, og jeg er klar for festen!`);
 $('bigBtn').onclick = () => { $('big').style.display = 'flex'; };
 $('big').onclick = () => { $('big').style.display = 'none'; };
 $('copyUrl').onclick = async () => { try { await navigator.clipboard.writeText(guestUrl()); log('Lenke kopiert: ' + guestUrl().split('#')[0]); } catch { log(guestUrl()); } };
